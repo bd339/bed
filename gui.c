@@ -31,7 +31,7 @@ static int   selection_valid;
 /*
  * selection[0] is the index of the first rune in the selection.
  * selection[1] is the index of the last rune in the selection.
- * NOTICE: selection[0] < selection[1] is perfectly valid and reasonable.
+ * NOTICE: selection[1] < selection[0] is perfectly valid and reasonable.
  * If this is a problem for you, use selection_begin() and selection_end().
  */
 static isize selection[2];
@@ -446,7 +446,7 @@ static isize
 buffer_pos_at_xy(int x, int y) {
 	int line = (y - MARGIN) / gui_font_height();
 	int line_x = MARGIN;
-	
+
 	if(line >= num_display_lines) {
 		line = num_display_lines - 1;
 	}
