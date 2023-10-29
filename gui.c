@@ -27,7 +27,7 @@ buffer_t buffer;
 
 static isize cursor_pos;
 static int   cursor_x;
-static int   selection_valid;
+static b32   selection_valid;
 /*
  * selection[0] is the index of the first rune in the selection.
  * selection[1] is the index of the last rune in the selection.
@@ -113,7 +113,7 @@ gui_mouse(arena memory, gui_event event, int mouse_x, int mouse_y) {
 		push_end(&cmdbuf);
 	} else if(event == mouse_drag) {
 		selection_valid = 1;
-        selection[1] = buffer_pos_at_xy(mouse_x, mouse_y);
+        cursor_pos = selection[1] = buffer_pos_at_xy(mouse_x, mouse_y);
 		selection[1] -= selection[1] == buffer_length(buffer);
 		arena cmdbuf = push_begin(memory);
 		redraw(&cmdbuf);
@@ -392,13 +392,14 @@ redraw(arena *cmdbuf) {
 
 	for(int i = 0; i < num_display_lines; ++i) {
 		s8 *line = push_text(cmdbuf, x, y);
+		b32 cursor_on_line_i = 0;
 
 		for(isize j = display_lines[i]; j < display_lines[i+1]; ++j) {
 			int rune = buffer_get(buffer, j);
 			int width = rune_width(rune);
 
-			if(cursor_pos == j && !selection_valid) {
-				// TODO: only outline cursor when there is a selection?
+			if(cursor_pos == j) {
+				cursor_on_line_i = 1;
 				push_cursor(cmdbuf, x, y, rune != -1 ? width : 8);
 			}
 
@@ -409,7 +410,7 @@ redraw(arena *cmdbuf) {
 				}
 			}
 
-			if(rune == '\n' || rune == -1) {
+			if((rune == '\n' || rune == -1) && !cursor_on_line_i) {
 				/* highlight trailing whitespace */
 				int trailing_x = x;
 
