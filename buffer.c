@@ -71,7 +71,20 @@ buffer_erase(buffer_t handle, isize pos) {
 	buffer *buf = handle_lookup(handle);
 	assert(pos < buf->length);
 	memmove(buf->runes + pos, buf->runes + pos + 1, (size_t)(buf->length - (pos + 1)));
-	--buf->length;
+	buf->length--;
+}
+
+void
+buffer_erase_string(buffer_t handle, isize begin, isize end) {
+	if(begin >= end) {
+		return;
+	}
+
+	buffer *buf = handle_lookup(handle);
+	assert(begin < buf->length);
+	assert(end <= buf->length);
+	memmove(buf->runes + begin, buf->runes + end, (size_t)(buf->length - end));
+	buf->length -= end - begin;
 }
 
 isize

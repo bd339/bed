@@ -29,8 +29,8 @@ static isize cursor_pos;
 static int   cursor_x;
 static b32   selection_valid;
 /*
- * selection[0] is the index of the first rune in the selection.
- * selection[1] is the index of the last rune in the selection.
+ * selection[0] is the buffer position of the first rune in the selection.
+ * selection[1] is the buffer position of the last rune in the selection.
  * NOTICE: selection[1] < selection[0] is perfectly valid and reasonable.
  * If this is a problem for you, use selection_begin() and selection_end().
  */
@@ -61,7 +61,7 @@ gui_reflow(arena memory) {
 	arena cmdbuf = push_begin(memory);
 	color magenta = rgb(255, 0, 255);
 	dimensions dim = gui_dimensions();
-	push_rect(&cmdbuf, layer_bg, 0, 0, dim.w, MARGIN , magenta);
+	push_rect(&cmdbuf, layer_bg, 0, 0, dim.w, MARGIN, magenta);
 	push_rect(&cmdbuf, layer_bg, 0, 0, MARGIN, dim.h, magenta);
 	push_rect(&cmdbuf, layer_bg, dim.w - MARGIN, 0, MARGIN, dim.h, magenta);
 
@@ -104,17 +104,17 @@ gui_mouse(arena memory, gui_event event, int mouse_x, int mouse_y) {
 	if(event == mouse_scrolldown || event == mouse_scrollup) {
 		display_scroll(memory, event == mouse_scrolldown ? 4 : -4);
 	} else if(event == mouse_left) {
-		cursor_pos = buffer_pos_at_xy(mouse_x, mouse_y);
+		selection[0] = cursor_pos = buffer_pos_at_xy(mouse_x, mouse_y);
 		selection_valid = 0;
-		selection[0] = cursor_pos < buffer_length(buffer) ? cursor_pos : cursor_pos - 1;
+		selection[0] -= selection[0] == buffer_length(buffer);
 		cursor_x = 0;
 		arena cmdbuf = push_begin(memory);
 		redraw(&cmdbuf);
 		push_end(&cmdbuf);
 	} else if(event == mouse_drag) {
 		selection_valid = 1;
-        cursor_pos = selection[1] = buffer_pos_at_xy(mouse_x, mouse_y);
-		selection[1] -= selection[1] == buffer_length(buffer);
+		selection[1] = buffer_pos_at_xy(mouse_x, mouse_y);
+		cursor_pos = selection[1] -= selection[1] == buffer_length(buffer);
 		arena cmdbuf = push_begin(memory);
 		redraw(&cmdbuf);
 		push_end(&cmdbuf);
@@ -192,10 +192,7 @@ gui_keyboard(arena memory, gui_event event) {
 	}
 
 	if(selection_valid) {
-		for(isize i = selection_end() - selection_begin(); i >= 0; --i) {
-			buffer_erase(buffer, selection_begin());
-		}
-
+		buffer_erase_string(buffer, selection_begin(), selection_end() + 1);
 		cursor_pos = selection_begin();
 		selection_valid = 0;
 	}
@@ -227,24 +224,24 @@ gui_keyboard(arena memory, gui_event event) {
 			s8_append(&indent, rune);
 		}
 
-		while(cursor_pos > bol) {
-			int rune = buffer_get(buffer, cursor_pos - 1);
+		isize whitespace = cursor_pos;
+
+		for(; whitespace > bol; --whitespace) {
+			int rune = buffer_get(buffer, whitespace - 1);
 
 			if(rune != ' ' && rune != '\t') {
 				break;
 			}
-
-			// TODO: dont call buffer_delete in a loop. Rewrite using buffer_delete_string.
-			buffer_erase(buffer, --cursor_pos);
 		}
 
+		buffer_erase_string(buffer, whitespace, cursor_pos);
+		cursor_pos = whitespace;
 		buffer_insert_string(buffer, cursor_pos, indent);
 		cursor_pos += indent.length;
 	} else if(ch == 0x15) {
-		// TODO: dont call buffer_delete in a loop. Rewrite using buffer_delete_string.
-		for(isize i = buffer_bol(buffer, cursor_pos); cursor_pos > i;) {
-			buffer_erase(buffer, --cursor_pos);
-		}
+		isize bol = buffer_bol(buffer, cursor_pos);
+		buffer_erase_string(buffer, bol, cursor_pos);
+		cursor_pos = bol;
 	} else if(ch == 0x13) { // Ctrl+s
 		if(!buffer_save(buffer)) {
 			// TODO: handle error
@@ -290,10 +287,9 @@ typedef struct {
 	int w;
 } cursor_cmd;
 
-#define CMD_ALIGN                                                                         \
-	  (alignof(rect_cmd) < alignof(text_cmd)                                              \
-	? (alignof(text_cmd) < alignof(cursor_cmd) ? alignof(cursor_cmd) : alignof(text_cmd)) \
-	: (alignof(rect_cmd) < alignof(cursor_cmd) ? alignof(cursor_cmd) : alignof(rect_cmd)))
+#define CMD_ALIGN (alignof(rect_cmd) < alignof(text_cmd)                                              \
+                ? (alignof(text_cmd) < alignof(cursor_cmd) ? alignof(cursor_cmd) : alignof(text_cmd)) \
+                : (alignof(rect_cmd) < alignof(cursor_cmd) ? alignof(cursor_cmd) : alignof(rect_cmd)))
 
 static arena
 push_begin(arena memory) {
@@ -383,9 +379,8 @@ selection_end(void) {
 
 static void
 redraw(arena *cmdbuf) {
-	color bg_color = rgb(255, 255, 234);
 	dimensions dim = gui_dimensions();
-	push_rect(cmdbuf, layer_bg, MARGIN, MARGIN, dim.w - 2*MARGIN, dim.h, bg_color);
+	push_rect(cmdbuf, layer_bg, MARGIN, MARGIN, dim.w - 2*MARGIN, dim.h, rgb(255, 255, 234));
 
 	int x = MARGIN;
 	int y = MARGIN;
@@ -405,12 +400,11 @@ redraw(arena *cmdbuf) {
 
 			if(selection_valid) {
 				if(selection_begin() <= j && j <= selection_end()) {
-					color selection_color = rgb(208, 235, 255);
-					push_rect(cmdbuf, layer_bg, x, y, width, gui_font_height(), selection_color);
+					push_rect(cmdbuf, layer_bg, x, y, width, gui_font_height(), rgb(208, 235, 255));
 				}
 			}
 
-			if((rune == '\n' || rune == -1) && !cursor_on_line_i) {
+			if(rune == '\n' || rune == -1) {
 				/* highlight trailing whitespace */
 				int trailing_x = x;
 
@@ -424,7 +418,7 @@ redraw(arena *cmdbuf) {
 					trailing_x -= rune_width(rune);
 				}
 
-				if(x - trailing_x) {
+				if(x - trailing_x && !cursor_on_line_i) {
 					color red = rgb(255, 0, 0);
 					push_rect(cmdbuf, layer_bg, trailing_x, y, x - trailing_x, gui_font_height(), red);
 				}
@@ -466,7 +460,7 @@ buffer_pos_at_xy(int x, int y) {
 static void
 display_scroll(arena memory, int num_lines) {
 	if(num_lines >= 0) {
-		display_lines[0] = display_lines[num_display_lines < num_lines ? num_display_lines : num_lines];
+		display_lines[0] = display_lines[num_lines < num_display_lines ? num_lines : num_display_lines - 1];
 		gui_reflow(memory);
 	} else {
 		while(display_lines[0] > 0 && num_lines) {

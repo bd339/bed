@@ -27,7 +27,7 @@ typedef struct {
 
 #define ALLOC_NOZERO 1
 
-__attribute__((malloc, alloc_size(2, 4), alloc_align(3)))
+__attribute__((alloc_size(2, 4), alloc_align(3)))
 void *arena_alloc(arena*, isize, isize, isize, int);
 void *arena_alignas(void*, isize);
 
