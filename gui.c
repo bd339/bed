@@ -13,15 +13,14 @@ typedef enum {
 	layer_fg,
 } layer;
 
-static arena push_begin(arena);
 static void  push_rect(arena*, layer, int, int, int, int, color);
 static s8*   push_text(arena*, int, int);
 static void  push_cursor(arena*, int, int, int);
-static void  push_end(arena*);
 
 /* DEFERRED RENDERING API END */
 
 buffer_t buffer;
+unsigned *pixels;
 
 /* GUI STATE VARIABLES BEGIN */
 
@@ -49,14 +48,73 @@ static int num_display_lines;
 static int rune_width(int);
 static isize selection_begin(void);
 static isize selection_end(void);
-static void redraw(arena*);
 static void display_scroll(arena, int);
 static isize buffer_pos_at_xy(int, int);
 
 /* GUI IMPLEMENTATION BEGIN */
 
-/* Must be called whenever buffer contents change or the dimensions change. */
 void
+gui_redraw(arena *cmdbuf) {
+	dimensions dim = gui_dimensions();
+	push_rect(cmdbuf, layer_bg, MARGIN, MARGIN, dim.w - 2*MARGIN, dim.h, rgb(255, 255, 234));
+
+	int x = MARGIN;
+	int y = MARGIN;
+
+	for(int i = 0; i < num_display_lines; ++i) {
+		s8 *line = push_text(cmdbuf, x, y);
+		b32 cursor_on_line_i = 0;
+
+		for(isize j = display_lines[i]; j < display_lines[i+1]; ++j) {
+			int rune = buffer_get(buffer, j);
+			int width = rune_width(rune);
+
+			if(cursor_pos == j) {
+				cursor_on_line_i = 1;
+				push_cursor(cmdbuf, x, y, rune != -1 ? width : 8);
+			}
+
+			if(selection_valid) {
+				if(selection_begin() <= j && j <= selection_end()) {
+					push_rect(cmdbuf, layer_bg, x, y, width, gui_font_height(), rgb(208, 235, 255));
+				}
+			}
+
+			if(rune == '\n' || rune == -1) {
+				/* highlight trailing whitespace */
+				int trailing_x = x;
+
+				for(isize k = j-1; k >= display_lines[i]; --k) {
+					int rune = buffer_get(buffer, k);
+
+					if(rune != ' ' && rune != '\t') {
+						break;
+					}
+
+					trailing_x -= rune_width(rune);
+				}
+
+				if(x - trailing_x && !cursor_on_line_i) {
+					color red = rgb(255, 0, 0);
+					push_rect(cmdbuf, layer_bg, trailing_x, y, x - trailing_x, gui_font_height(), red);
+				}
+			} else if(rune == '\t') {
+				memcpy(line->data + line->length, "    ", 4);
+				line->length += 4;
+			} else {
+				s8_append(line, rune);
+			}
+
+			x += width;
+		}
+
+		x = MARGIN;
+		y += gui_font_height();
+	}
+}
+
+/* Must be called whenever buffer contents change or the dimensions change. */
+arena
 gui_reflow(arena memory) {
 	arena cmdbuf = push_begin(memory);
 	color magenta = rgb(255, 0, 255);
@@ -95,8 +153,7 @@ gui_reflow(arena memory) {
 		}
 	}
 
-	redraw(&cmdbuf);
-	push_end(&cmdbuf);
+	return cmdbuf;
 }
 
 void
@@ -108,16 +165,10 @@ gui_mouse(arena memory, gui_event event, int mouse_x, int mouse_y) {
 		selection_valid = 0;
 		selection[0] -= selection[0] == buffer_length(buffer);
 		cursor_x = 0;
-		arena cmdbuf = push_begin(memory);
-		redraw(&cmdbuf);
-		push_end(&cmdbuf);
 	} else if(event == mouse_drag) {
 		selection_valid = 1;
 		selection[1] = buffer_pos_at_xy(mouse_x, mouse_y);
 		cursor_pos = selection[1] -= selection[1] == buffer_length(buffer);
-		arena cmdbuf = push_begin(memory);
-		redraw(&cmdbuf);
-		push_end(&cmdbuf);
 	}
 }
 
@@ -178,16 +229,12 @@ gui_keyboard(arena memory, gui_event event) {
 			return;
 		} else {
 			while(cursor_pos >= display_lines[num_display_lines]) {
-				display_lines[0] = display_lines[1];
-				gui_reflow(memory);
+				display_scroll(memory, 1);
 			}
 		}
 	}
 
 	if(event < kbd_char) {
-		arena cmdbuf = push_begin(memory);
-		redraw(&cmdbuf);
-		push_end(&cmdbuf);
 		return;
 	}
 
@@ -253,10 +300,6 @@ gui_keyboard(arena memory, gui_event event) {
 	gui_reflow(memory);
 }
 
-/* GUI IMPLEMENTATION END */
-
-/* DEFERRED RENDERING IMPLEMENTATION BEGIN */
-
 typedef enum {
 	cmd_rect,
 	cmd_text,
@@ -291,13 +334,44 @@ typedef struct {
                 ? (alignof(text_cmd) < alignof(cursor_cmd) ? alignof(cursor_cmd) : alignof(text_cmd)) \
                 : (alignof(rect_cmd) < alignof(cursor_cmd) ? alignof(cursor_cmd) : alignof(rect_cmd)))
 
-static arena
+arena
 push_begin(arena memory) {
 	arena cmdbuf = memory;
 	cmdbuf.begin = memory.begin + memory.offset;
 	cmdbuf.offset = 0;
 	return cmdbuf;
 }
+
+void
+push_end(arena *cmdbuf) {
+	/* draw layers from background to foreground */
+	for(layer layer = layer_bg; layer <= layer_fg; ++layer) {
+		for(char *it = cmdbuf->begin; it < cmdbuf->begin + cmdbuf->offset;) {
+			it = arena_alignas(it, CMD_ALIGN);
+			cmd cmd = *(int*)it & 3;
+
+			if(cmd == cmd_rect) {
+				rect_cmd *rect = (rect_cmd*)it;
+
+				if(rect->layer == layer) {
+					gui_rect(rect->x, rect->y, rect->w, rect->h, rect->rgb);
+				}
+			} else if(cmd == cmd_text && layer == layer_text) {
+				text_cmd *text = (text_cmd*)it;
+				gui_text(text->x, text->y, text->runes);
+			} else if(cmd == cmd_cursor && layer == layer_fg) {
+				cursor_cmd *cursor = (cursor_cmd*)it;
+				gui_invert(cursor->x, cursor->y, cursor->w, gui_font_height());
+			}
+
+			it += *(int*)it >> 2;
+		}
+	}
+}
+
+/* GUI IMPLEMENTATION END */
+
+/* DEFERRED RENDERING IMPLEMENTATION BEGIN */
 
 static void
 push_rect(arena *cmdbuf, layer layer, int x, int y, int w, int h, color rgb) {
@@ -331,33 +405,6 @@ push_cursor(arena *cmdbuf, int x, int y, int w) {
 	cmd->w = w;
 }
 
-static void
-push_end(arena *cmdbuf) {
-	/* draw layers from background to foreground */
-	for(layer layer = layer_bg; layer <= layer_fg; ++layer) {
-		for(char *it = cmdbuf->begin; it < cmdbuf->begin + cmdbuf->offset;) {
-			it = arena_alignas(it, CMD_ALIGN);
-			cmd cmd = *(int*)it & 3;
-
-			if(cmd == cmd_rect) {
-				rect_cmd *rect = (rect_cmd*)it;
-
-				if(rect->layer == layer) {
-					gui_rect(rect->x, rect->y, rect->w, rect->h, rect->rgb);
-				}
-			} else if(cmd == cmd_text && layer == layer_text) {
-				text_cmd *text = (text_cmd*)it;
-				gui_text(text->x, text->y, text->runes);
-			} else if(cmd == cmd_cursor && layer == layer_fg) {
-				cursor_cmd *cursor = (cursor_cmd*)it;
-				gui_invert(cursor->x, cursor->y, cursor->w, gui_font_height());
-			}
-
-			it += *(int*)it >> 2;
-		}
-	}
-}
-
 /* DEFERRED RENDERING IMPLEMENTATION END */
 
 static int
@@ -375,66 +422,6 @@ static isize
 selection_end(void) {
 	assert(selection_valid);
 	return selection[0] < selection[1] ? selection[1] : selection[0];
-}
-
-static void
-redraw(arena *cmdbuf) {
-	dimensions dim = gui_dimensions();
-	push_rect(cmdbuf, layer_bg, MARGIN, MARGIN, dim.w - 2*MARGIN, dim.h, rgb(255, 255, 234));
-
-	int x = MARGIN;
-	int y = MARGIN;
-
-	for(int i = 0; i < num_display_lines; ++i) {
-		s8 *line = push_text(cmdbuf, x, y);
-		b32 cursor_on_line_i = 0;
-
-		for(isize j = display_lines[i]; j < display_lines[i+1]; ++j) {
-			int rune = buffer_get(buffer, j);
-			int width = rune_width(rune);
-
-			if(cursor_pos == j) {
-				cursor_on_line_i = 1;
-				push_cursor(cmdbuf, x, y, rune != -1 ? width : 8);
-			}
-
-			if(selection_valid) {
-				if(selection_begin() <= j && j <= selection_end()) {
-					push_rect(cmdbuf, layer_bg, x, y, width, gui_font_height(), rgb(208, 235, 255));
-				}
-			}
-
-			if(rune == '\n' || rune == -1) {
-				/* highlight trailing whitespace */
-				int trailing_x = x;
-
-				for(isize k = j-1; k >= display_lines[i]; --k) {
-					int rune = buffer_get(buffer, k);
-
-					if(rune != ' ' && rune != '\t') {
-						break;
-					}
-
-					trailing_x -= rune_width(rune);
-				}
-
-				if(x - trailing_x && !cursor_on_line_i) {
-					color red = rgb(255, 0, 0);
-					push_rect(cmdbuf, layer_bg, trailing_x, y, x - trailing_x, gui_font_height(), red);
-				}
-			} else if(rune == '\t') {
-				memcpy(line->data + line->length, "    ", 4);
-				line->length += 4;
-			} else {
-				s8_append(line, rune);
-			}
-
-			x += width;
-		}
-
-		x = MARGIN;
-		y += gui_font_height();
-	}
 }
 
 static isize
@@ -461,13 +448,12 @@ static void
 display_scroll(arena memory, int num_lines) {
 	if(num_lines >= 0) {
 		display_lines[0] = display_lines[num_lines < num_display_lines ? num_lines : num_display_lines - 1];
-		gui_reflow(memory);
 	} else {
 		while(display_lines[0] > 0 && num_lines) {
 			display_lines[0] = buffer_bol(buffer, display_lines[0] - 1);
 			num_lines++;
 		}
-
-		gui_reflow(memory);
 	}
+
+	gui_reflow(memory);
 }

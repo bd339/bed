@@ -30,6 +30,8 @@ access_violation_handler(EXCEPTION_POINTERS *ExceptionInfo) {
 
 LRESULT CALLBACK
 window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+	static b32 must_reflow;
+
 	switch(message) {
 		case WM_CHAR:
 			gui_keyboard(memory, kbd_char + (wParam & 0xFF));
@@ -80,7 +82,26 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			EndPaint(window, &ps);
 			break;
 
+		case WM_TIMER:
+			if(wParam == 1) {
+				arena cmdbuf;
+
+				if(must_reflow) {
+					must_reflow = 0;
+					cmdbuf = gui_reflow(memory);
+				} else {
+					cmdbuf = push_begin(memory);
+				}
+
+				gui_redraw(&cmdbuf);
+				push_end(&cmdbuf);
+				InvalidateRect(window, 0, 0);
+				UpdateWindow(window);
+			}
+			break;
+
 		case WM_SIZE:
+			extern unsigned *pixels;
 			static HBITMAP bitmap;
 
 			if(bitmap) {
@@ -88,12 +109,20 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 				DeleteDC(backbuffer);
 			}
 
-			backbuffer = CreateCompatibleDC(GetDC(window));
-			bitmap = CreateCompatibleBitmap(GetDC(window), LOWORD(lParam), HIWORD(lParam));
+			BITMAPINFO bitmap_info = {0};
+			bitmap_info.bmiHeader.biSize        = sizeof(bitmap_info.bmiHeader);
+			bitmap_info.bmiHeader.biPlanes      = 1;
+			bitmap_info.bmiHeader.biBitCount    = 32;
+			bitmap_info.bmiHeader.biCompression = BI_RGB;
+			bitmap_info.bmiHeader.biWidth       =  LOWORD(lParam);
+			bitmap_info.bmiHeader.biHeight      = -HIWORD(lParam);
+
+			backbuffer = CreateCompatibleDC(0);
+			bitmap = CreateDIBSection(0, &bitmap_info, DIB_RGB_COLORS, (void**)&pixels, 0, 0);
 			SelectObject(backbuffer, bitmap);
 			SelectObject(backbuffer, GetStockObject(SYSTEM_FIXED_FONT));
 			SetBkMode(backbuffer, TRANSPARENT);
-			gui_reflow(memory);
+			must_reflow = 1;
 			break;
 
 		case WM_DESTROY:
@@ -118,37 +147,39 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 
 	AddVectoredExceptionHandler(1, &access_violation_handler);
 
-	HANDLE file = CreateFile(lpCmdLine, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+	{
+		HANDLE file = CreateFile(lpCmdLine, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 
-	if(file == INVALID_HANDLE_VALUE) {
-		return 4;
+		if(file == INVALID_HANDLE_VALUE) {
+			return 4;
+		}
+
+		LARGE_INTEGER file_size;
+
+		if(!GetFileSizeEx(file, &file_size)) {
+			return 5;
+		}
+
+		s8 file_contents;
+		file_contents.data = HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, (SIZE_T)file_size.QuadPart);
+		file_contents.length = file_size.QuadPart;
+
+		unsigned long bytes_read;
+
+		if(!ReadFile(file, file_contents.data, file_size.u.LowPart, &bytes_read, 0)) {
+			return 6;
+		}
+
+		char file_path[MAX_PATH];
+		GetFullPathName(lpCmdLine, MAX_PATH, file_path, 0);
+
+		extern buffer_t buffer;
+		buffer = buffer_new(&memory, file_path);
+		buffer_insert_string(buffer, 0, file_contents);
+
+		CloseHandle(file);
+		HeapFree(GetProcessHeap(), 0, file_contents.data);
 	}
-
-	LARGE_INTEGER file_size;
-
-	if(!GetFileSizeEx(file, &file_size)) {
-		return 5;
-	}
-
-	s8 file_contents;
-	file_contents.data = HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, (SIZE_T)file_size.QuadPart);
-	file_contents.length = file_size.QuadPart;
-
-	unsigned long bytes_read;
-
-	if(!ReadFile(file, file_contents.data, file_size.u.LowPart, &bytes_read, 0)) {
-		return 6;
-	}
-
-	char file_path[MAX_PATH];
-	GetFullPathName(lpCmdLine, MAX_PATH, file_path, 0);
-
-	extern buffer_t buffer;
-	buffer = buffer_new(&memory, file_path);
-	buffer_insert_string(buffer, 0, file_contents);
-
-	CloseHandle(file);
-	HeapFree(GetProcessHeap(), 0, file_contents.data);
 
 	WNDCLASS window_class      = {0};
 	window_class.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
@@ -178,6 +209,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 	}
 
 	ShowWindow(window, SW_MAXIMIZE);
+	SetTimer(window, 1, 1000 / 60, 0);
 
 	/* Main event loop */
 	MSG msg;
@@ -227,7 +259,6 @@ gui_rect(int x, int y, int w, int h, color c) {
 	rect.bottom = y + h;
 	HBRUSH brush = CreateSolidBrush(c);
 	FillRect(backbuffer, &rect, brush);
-	InvalidateRect(window, &rect, 0);
 	DeleteObject(brush);
 }
 
@@ -239,5 +270,4 @@ gui_invert(int x, int y, int w, int h) {
 	rect.right  = x + w;
 	rect.bottom = y + h;
 	InvertRect(backbuffer, &rect);
-	InvalidateRect(window, &rect, 0);
 }

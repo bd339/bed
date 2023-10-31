@@ -30,7 +30,10 @@ dimensions gui_dimensions(void);
 void gui_text(int, int, s8);
 void gui_rect(int, int, int, int, color);
 void gui_invert(int, int, int, int);
-void gui_reflow(arena);
+void gui_redraw(arena*);
+arena gui_reflow(arena);
+arena push_begin(arena);
+void  push_end(arena*);
 void gui_mouse(arena, gui_event, int, int);
 void gui_keyboard(arena, gui_event);
 
