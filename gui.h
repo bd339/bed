@@ -5,7 +5,7 @@
 
 typedef unsigned color;
 
-#define rgb(r, g, b) ((r) | (g) << 8 | (b) << 16)
+#define rgb(r, g, b) ((r) << 16 | (g) << 8 | (b))
 
 typedef struct {
 	int w;
@@ -28,8 +28,6 @@ int gui_font_width(int);
 int gui_font_height(void);
 dimensions gui_dimensions(void);
 void gui_text(int, int, s8);
-void gui_rect(int, int, int, int, color);
-void gui_invert(int, int, int, int);
 void gui_redraw(arena*);
 arena gui_reflow(arena);
 arena push_begin(arena);

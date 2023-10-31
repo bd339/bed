@@ -56,7 +56,7 @@ static isize buffer_pos_at_xy(int, int);
 void
 gui_redraw(arena *cmdbuf) {
 	dimensions dim = gui_dimensions();
-	push_rect(cmdbuf, layer_bg, MARGIN, MARGIN, dim.w - 2*MARGIN, dim.h, rgb(255, 255, 234));
+	push_rect(cmdbuf, layer_bg, MARGIN, MARGIN, dim.w - 2*MARGIN, dim.h - MARGIN, rgb(255, 255, 234));
 
 	int x = MARGIN;
 	int y = MARGIN;
@@ -344,6 +344,8 @@ push_begin(arena memory) {
 
 void
 push_end(arena *cmdbuf) {
+	dimensions dim = gui_dimensions();
+
 	/* draw layers from background to foreground */
 	for(layer layer = layer_bg; layer <= layer_fg; ++layer) {
 		for(char *it = cmdbuf->begin; it < cmdbuf->begin + cmdbuf->offset;) {
@@ -354,14 +356,35 @@ push_end(arena *cmdbuf) {
 				rect_cmd *rect = (rect_cmd*)it;
 
 				if(rect->layer == layer) {
-					gui_rect(rect->x, rect->y, rect->w, rect->h, rect->rgb);
+					unsigned *row = pixels + rect->y * dim.w + rect->x;
+
+					for(int i = 0; i < rect->h; ++i) {
+						unsigned *pixel = row;
+
+						for(int j = 0; j < rect->w; ++j) {
+							*pixel++ = rect->rgb;
+						}
+
+						row += dim.w;
+					}
 				}
 			} else if(cmd == cmd_text && layer == layer_text) {
 				text_cmd *text = (text_cmd*)it;
 				gui_text(text->x, text->y, text->runes);
 			} else if(cmd == cmd_cursor && layer == layer_fg) {
 				cursor_cmd *cursor = (cursor_cmd*)it;
-				gui_invert(cursor->x, cursor->y, cursor->w, gui_font_height());
+				unsigned *row = pixels + cursor->y * dim.w + cursor->x;
+
+				for(int i = 0; i < gui_font_height(); ++i) {
+					unsigned *pixel = row;
+
+					for(int j = 0; j < cursor->w; ++j) {
+						*pixel = ~*pixel;
+						pixel++;
+					}
+
+					row += dim.w;
+				}
 			}
 
 			it += *(int*)it >> 2;

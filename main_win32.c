@@ -249,25 +249,3 @@ void
 gui_text(int x, int y, s8 str) {
 	TextOut(backbuffer, x, y, (char*)str.data, (int)str.length);
 }
-
-void
-gui_rect(int x, int y, int w, int h, color c) {
-	RECT rect;
-	rect.left = x;
-	rect.top  = y;
-	rect.right  = x + w;
-	rect.bottom = y + h;
-	HBRUSH brush = CreateSolidBrush(c);
-	FillRect(backbuffer, &rect, brush);
-	DeleteObject(brush);
-}
-
-void
-gui_invert(int x, int y, int w, int h) {
-	RECT rect;
-	rect.left = x;
-	rect.top  = y;
-	rect.right  = x + w;
-	rect.bottom = y + h;
-	InvertRect(backbuffer, &rect);
-}
