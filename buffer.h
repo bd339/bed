@@ -5,7 +5,7 @@
 
 typedef uintptr_t buffer_t;
 
-buffer_t buffer_new(arena*, s8);
+buffer_t buffer_new(arena*, const char*);
 void buffer_free(buffer_t);
 void buffer_insert(buffer_t, isize, int);
 void buffer_insert_string(buffer_t, isize, s8);

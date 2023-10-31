@@ -34,8 +34,6 @@ void *arena_alignas(void*, isize);
 #define s8(s)           (s8){ lengthof(s), (u8*)(s) }
 #define s8_append(s, x) (s)->data[(s)->length++] = (u8)(x)
 
-s8 s8_clone(arena*, s8);
-
 #ifdef NDEBUG
 #define assert(c)
 #else

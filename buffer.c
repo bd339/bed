@@ -5,8 +5,8 @@
 
 typedef struct {
 	isize length;
-	s8 file_path;
 	u16 generation;
+	char file_path[512];
 	u8 runes[1 << 30];
 } buffer;
 
@@ -20,11 +20,17 @@ handle_lookup(buffer_t handle) {
 }
 
 buffer_t
-buffer_new(arena *arena, s8 file_path) {
+buffer_new(arena *arena, const char *file_path) {
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(!buffers[i]) {
 			buffer *buf = arena_alloc(arena, sizeof(buffer), 1 << 16, 1, ALLOC_NOZERO);
-			buf->file_path = s8_clone(arena, file_path);
+
+			if(strlen(file_path) < countof(buf->file_path)) {
+				memcpy(buf->file_path, file_path, strlen(file_path) + 1);
+			} else {
+				return 0;
+			}
+
 			buf->length = 0;
 			return buffers[i] = (buffer_t)buf | buf->generation;
 		}
@@ -81,7 +87,6 @@ buffer_erase_string(buffer_t handle, isize begin, isize end) {
 	}
 
 	buffer *buf = handle_lookup(handle);
-	assert(begin < buf->length);
 	assert(end <= buf->length);
 	memmove(buf->runes + begin, buf->runes + end, (size_t)(buf->length - end));
 	buf->length -= end - begin;
@@ -126,9 +131,10 @@ buffer_get(buffer_t handle, isize pos) {
 	return pos < buf->length ? buf->runes[pos] : -1;
 }
 
-int buffer_save(buffer_t handle) {
+int
+buffer_save(buffer_t handle) {
 	buffer *buf = handle_lookup(handle);
-	FILE *file = fopen((char*)buf->file_path.data, "wb");
+	FILE *file = fopen(buf->file_path, "wb");
 
 	if(!file) {
 		// TODO: propagate error information

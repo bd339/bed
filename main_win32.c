@@ -131,8 +131,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 	}
 
 	s8 file_contents;
-	file_contents.data = arena_alloc(&memory, file_size.QuadPart ? file_size.QuadPart : 1, 1, 1, 0);
-	file_contents.length = file_size.QuadPart ? file_size.QuadPart : 1;
+	file_contents.data = HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, (SIZE_T)file_size.QuadPart);
+	file_contents.length = file_size.QuadPart;
 
 	unsigned long bytes_read;
 
@@ -140,15 +140,15 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 		return 6;
 	}
 
-	s8 file_path;
-	file_path.data = arena_alloc(&memory, MAX_PATH, 1, 1, 0);
-	file_path.length = 1 + GetFullPathName(lpCmdLine, MAX_PATH, (char*)file_path.data, 0);
-
-	CloseHandle(file);
+	char file_path[MAX_PATH];
+	GetFullPathName(lpCmdLine, MAX_PATH, file_path, 0);
 
 	extern buffer_t buffer;
 	buffer = buffer_new(&memory, file_path);
 	buffer_insert_string(buffer, 0, file_contents);
+
+	CloseHandle(file);
+	HeapFree(GetProcessHeap(), 0, file_contents.data);
 
 	WNDCLASS window_class      = {0};
 	window_class.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
