@@ -28,11 +28,9 @@ int gui_font_width(int);
 int gui_font_height(void);
 dimensions gui_dimensions(void);
 void gui_text(int, int, s8);
-void gui_redraw(arena*);
-arena gui_reflow(arena);
-arena push_begin(arena);
-void  push_end(arena*);
-void gui_mouse(arena, gui_event, int, int);
+void gui_redraw(arena);
+void gui_reflow(void);
+void gui_mouse(gui_event, int, int);
 void gui_keyboard(arena, gui_event);
 
 #endif // BED_GUI_H

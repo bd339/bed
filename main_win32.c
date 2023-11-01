@@ -30,8 +30,6 @@ access_violation_handler(EXCEPTION_POINTERS *ExceptionInfo) {
 
 LRESULT CALLBACK
 window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-	static b32 must_reflow;
-
 	switch(message) {
 		case WM_CHAR:
 			gui_keyboard(memory, kbd_char + (wParam & 0xFF));
@@ -49,21 +47,21 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			break;
 
 		case WM_LBUTTONDOWN:
-			gui_mouse(memory, mouse_left, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+			gui_mouse(mouse_left, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 			break;
 
 		case WM_MOUSEWHEEL:
 			int delta = GET_WHEEL_DELTA_WPARAM(wParam);
 			int x = GET_X_LPARAM(lParam);
 			int y = GET_Y_LPARAM(lParam);
-			gui_mouse(memory, delta > 0 ? mouse_scrollup : mouse_scrolldown, x, y);
+			gui_mouse(delta > 0 ? mouse_scrollup : mouse_scrolldown, x, y);
 			break;
 
 		case WM_MOUSEMOVE:
 			if(wParam & MK_LBUTTON) {
 				int x = GET_X_LPARAM(lParam);
 				int y = GET_Y_LPARAM(lParam);
-				gui_mouse(memory, mouse_drag, x, y);
+				gui_mouse(mouse_drag, x, y);
 			}
 			break;
 
@@ -84,17 +82,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 
 		case WM_TIMER:
 			if(wParam == 1) {
-				arena cmdbuf;
-
-				if(must_reflow) {
-					must_reflow = 0;
-					cmdbuf = gui_reflow(memory);
-				} else {
-					cmdbuf = push_begin(memory);
-				}
-
-				gui_redraw(&cmdbuf);
-				push_end(&cmdbuf);
+				gui_redraw(memory);
 				InvalidateRect(window, 0, 0);
 				UpdateWindow(window);
 			}
@@ -122,7 +110,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			SelectObject(backbuffer, bitmap);
 			SelectObject(backbuffer, GetStockObject(SYSTEM_FIXED_FONT));
 			SetBkMode(backbuffer, TRANSPARENT);
-			must_reflow = 1;
+			gui_reflow();
 			break;
 
 		case WM_DESTROY:
