@@ -110,6 +110,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			SelectObject(backbuffer, bitmap);
 			SelectObject(backbuffer, GetStockObject(SYSTEM_FIXED_FONT));
 			SetBkMode(backbuffer, TRANSPARENT);
+
 			gui_reflow();
 			break;
 

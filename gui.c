@@ -89,7 +89,7 @@ gui_redraw(arena memory) {
 			if(cursor_pos == j) {
 				cursor_on_line_i = 1;
 
-				if(cursor_state < 30) {
+				if(cursor_state < 15 || (cursor_state >= 30 && cursor_state < 45)) {
 					push_cursor(&cmdbuf, x, y, rune != -1 ? width : 8);
 				}
 			}
