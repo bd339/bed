@@ -28,6 +28,12 @@ unsigned *pixels;
 
 static isize cursor_pos;
 static int   cursor_x;
+/*
+ * cursor_state implements blinking of the cursor.
+ * Whenever you update the cursor position you must reset cursor_state.
+ * Therefore you should update cursor_pos using set_cursor_pos().
+ */
+static int   cursor_state;
 static b32   selection_valid;
 /*
  * selection[0] is the buffer position of the first rune in the selection.
@@ -52,6 +58,7 @@ static isize selection_begin(void);
 static isize selection_end(void);
 static void display_scroll(int);
 static isize buffer_pos_at_xy(int, int);
+static isize set_cursor_pos(isize);
 
 /* GUI IMPLEMENTATION BEGIN */
 
@@ -68,6 +75,8 @@ gui_redraw(arena memory) {
 	int x = MARGIN;
 	int y = MARGIN;
 
+	cursor_state = cursor_state >= 60 ? 0 : cursor_state + 1;
+
 	for(int i = 0; i < num_display_lines; ++i) {
 		s8 *line = push_text(&cmdbuf, x, y);
 		b32 cursor_on_line_i = 0;
@@ -79,7 +88,10 @@ gui_redraw(arena memory) {
 
 			if(cursor_pos == j) {
 				cursor_on_line_i = 1;
-				push_cursor(&cmdbuf, x, y, rune != -1 ? width : 8);
+
+				if(cursor_state < 30) {
+					push_cursor(&cmdbuf, x, y, rune != -1 ? width : 8);
+				}
 			}
 
 			if(selection_valid) {
@@ -167,25 +179,21 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 	if(event == mouse_scrolldown || event == mouse_scrollup) {
 		display_scroll(event == mouse_scrolldown ? 4 : -4);
 	} else if(event == mouse_left) {
-		selection[0] = cursor_pos = buffer_pos_at_xy(mouse_x, mouse_y);
-		selection_valid = 0;
+		selection[0] = set_cursor_pos(buffer_pos_at_xy(mouse_x, mouse_y));
 		selection[0] -= selection[0] == buffer_length(buffer);
-		cursor_x = 0;
 	} else if(event == mouse_drag) {
-		selection_valid = 1;
 		selection[1] = buffer_pos_at_xy(mouse_x, mouse_y);
-		cursor_pos = selection[1] -= selection[1] == buffer_length(buffer);
+		set_cursor_pos(selection[1] -= selection[1] == buffer_length(buffer));
+		selection_valid = 1;
 	}
 }
 
 void
 gui_keyboard(arena memory, gui_event event) {
 	if(event == kbd_left) {
-		cursor_pos -= cursor_pos > 0;
-		cursor_x = 0;
+		set_cursor_pos(cursor_pos - (cursor_pos > 0));
 	} else if(event == kbd_right) {
-		cursor_pos += cursor_pos < buffer_length(buffer);
-		cursor_x = 0;
+		set_cursor_pos(cursor_pos + (cursor_pos < buffer_length(buffer)));
 	} else if(event == kbd_down || event == kbd_up) {
 		for(int i = 0; i < num_display_lines; ++i) {
 			if(cursor_pos < display_lines[i+1]) {
@@ -205,8 +213,8 @@ gui_keyboard(arena memory, gui_event event) {
 					}
 				}
 
-				cursor_pos = event == kbd_up ? display_lines[i-1] : display_lines[i+1];
-				isize stop = event == kbd_up ? display_lines[i]   : display_lines[i+2];
+				set_cursor_pos(event == kbd_up ? display_lines[i-1] : display_lines[i+1]);
+				isize stop = event == kbd_up ? display_lines[i] : display_lines[i+2];
 
 				for(int next_x = MARGIN;; ++cursor_pos) {
 					if(cursor_pos == stop) {
@@ -218,7 +226,6 @@ gui_keyboard(arena memory, gui_event event) {
 					next_x += rune_width(buffer_get(buffer, cursor_pos));
 
 					if(next_x >= x) {
-						cursor_x = 0;
 						break;
 					}
 				}
@@ -232,7 +239,6 @@ gui_keyboard(arena memory, gui_event event) {
 		if(cursor_pos < display_lines[0]) {
 			display_lines[0] = buffer_bol(buffer, cursor_pos);
 			gui_reflow();
-			return;
 		} else {
 			while(cursor_pos >= display_lines[num_display_lines]) {
 				display_scroll(1);
@@ -246,8 +252,7 @@ gui_keyboard(arena memory, gui_event event) {
 
 	if(selection_valid) {
 		buffer_erase_string(buffer, selection_begin(), selection_end() + 1);
-		cursor_pos = selection_begin();
-		selection_valid = 0;
+		set_cursor_pos(selection_begin());
 	}
 
 	enum {
@@ -257,7 +262,7 @@ gui_keyboard(arena memory, gui_event event) {
 
 	if(ch == backspace) {
 		if(cursor_pos > 0) {
-			buffer_erase(buffer, --cursor_pos);
+			buffer_erase(buffer, set_cursor_pos(cursor_pos - 1));
 		}
 	} else if(ch == enter || ch == '\n') {
 		s8 indent = {0};
@@ -288,19 +293,20 @@ gui_keyboard(arena memory, gui_event event) {
 		}
 
 		buffer_erase_string(buffer, whitespace, cursor_pos);
-		cursor_pos = whitespace;
+		set_cursor_pos(whitespace);
 		buffer_insert_string(buffer, cursor_pos, indent);
-		cursor_pos += indent.length;
+		set_cursor_pos(cursor_pos + indent.length);
 	} else if(ch == 0x15) {
 		isize bol = buffer_bol(buffer, cursor_pos);
 		buffer_erase_string(buffer, bol, cursor_pos);
-		cursor_pos = bol;
+		set_cursor_pos(bol);
 	} else if(ch == 0x13) { // Ctrl+s
 		if(!buffer_save(buffer)) {
 			// TODO: handle error
 		}
 	} else {
-		buffer_insert(buffer, cursor_pos++, ch);
+		buffer_insert(buffer, cursor_pos, ch);
+		set_cursor_pos(cursor_pos + 1);
 	}
 
 	gui_reflow();
@@ -485,4 +491,13 @@ display_scroll(int num_lines) {
 	}
 
 	gui_reflow();
+}
+
+static isize
+set_cursor_pos(isize pos) {
+	cursor_state = 0;
+	cursor_x = 0;
+	cursor_pos = pos;
+	selection_valid = 0;
+	return cursor_pos;
 }
