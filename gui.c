@@ -350,6 +350,19 @@ typedef struct {
                 ? (alignof(text_cmd) < alignof(cursor_cmd) ? alignof(cursor_cmd) : alignof(text_cmd)) \
                 : (alignof(rect_cmd) < alignof(cursor_cmd) ? alignof(cursor_cmd) : alignof(rect_cmd)))
 
+static void
+clip_rect(int *x, int *y, int *w, int *h) {
+	dimensions dim = gui_dimensions();
+	int xmin = *x < 0 ? 0 : *x;
+	int ymin = *y < 0 ? 0 : *y;
+	int xmax = *x + *w < dim.w ? *x + *w : dim.w;
+	int ymax = *y + *h < dim.h ? *y + *h : dim.h;
+	*x = xmin;
+	*y = ymin;
+	*w = xmax - xmin;
+	*h = ymax - ymin;
+}
+
 static arena
 push_begin(arena memory) {
 	arena cmdbuf = memory;
@@ -404,6 +417,7 @@ push_end(arena *cmdbuf) {
 				rect_cmd *rect = (rect_cmd*)it;
 
 				if(rect->layer == layer) {
+					clip_rect(&rect->x, &rect->y, &rect->w, &rect->h);
 					unsigned *row = pixels + rect->y * dim.w + rect->x;
 
 					for(int i = 0; i < rect->h; ++i) {
@@ -421,9 +435,11 @@ push_end(arena *cmdbuf) {
 				gui_text(text->x, text->y, text->runes);
 			} else if(cmd == cmd_cursor && layer == layer_fg) {
 				cursor_cmd *cursor = (cursor_cmd*)it;
+				int cursor_h = gui_font_height();
+				clip_rect(&cursor->x, &cursor->y, &cursor->w, &cursor_h);
 				unsigned *row = pixels + cursor->y * dim.w + cursor->x;
 
-				for(int i = 0; i < gui_font_height(); ++i) {
+				for(int i = 0; i < cursor_h; ++i) {
 					unsigned *pixel = row;
 
 					for(int j = 0; j < cursor->w; ++j) {
