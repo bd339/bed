@@ -16,7 +16,7 @@ typedef int32_t   b32;
 
 typedef struct {
 	isize length;
-	u8 *data;
+	char *data;
 } s8;
 
 typedef struct {
@@ -31,8 +31,10 @@ __attribute__((alloc_size(2, 4), alloc_align(3)))
 void *arena_alloc(arena*, isize, isize, isize, int);
 void *arena_alignas(void*, isize);
 
-#define s8(s)           (s8){ lengthof(s), (u8*)(s) }
-#define s8_append(s, x) (s)->data[(s)->length++] = (u8)(x)
+#define s8(s)           (s8){ lengthof(s), (char*)(s) }
+#define s8_append(s, x) (s)->data[(s)->length++] = (char)(x)
+
+void s8_reverse(s8*);
 
 #ifdef NDEBUG
 #define assert(c)
