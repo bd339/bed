@@ -1,13 +1,15 @@
 .POSIX:
 .SUFFIXES:
-CC     = gcc
-CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wdouble-promotion -Wconversion -fsanitize=undefined -fsanitize-trap -g3
+CC = gcc
+override CFLAGS += -Wall -Wextra -Wno-unused-parameter -Wdouble-promotion -Wconversion -fsanitize=undefined -fsanitize-trap -g3
 LDLIBS = -lgdi32 -luser32
+TESTDEPS = test.o buffer.o util.o
 
 windows: main_win32.o buffer.o gui.o util.o
 	$(CC) $(LDFLAGS) -mwindows -o bed$(EXE) $^ $(LDLIBS)
-test: test.o buffer.o util.o
-	$(CC) -o testrunner$(EXE) $^ && ./testrunner$(EXE)
+test: clean $(TESTDEPS)
+	$(CC) -o testrunner$(EXE) $(TESTDEPS) && ./testrunner$(EXE)
+	make clean
 clean:
 	rm -f bed$(EXE) *.o
 
