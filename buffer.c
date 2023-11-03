@@ -15,18 +15,21 @@ typedef struct {
 	isize at;
 	isize length;
 	/* the erased runes IN REVERSE ORDER */
-	u8 erased[128];
+	char erased[128];
 } log_entry;
 
 /* A log is a stack of editing operations represented by a ring buffer. */
 typedef struct {
 	log_entry stack[1000];
 	int top;
+	int length;
 } log;
 
-static void  log_push_insert(log*, isize, isize);
-static void  log_push_erase(log*, buffer*, isize, isize);
-static isize log_undo(log*, log*, buffer*);
+static void       log_push_insert(log*, isize, isize);
+static void       log_push_erase(log*, buffer*, isize, isize);
+static log_entry *log_top(log*);
+static void       log_pop(log*);
+static isize      log_undo(log*, log*, buffer*);
 
 /* LOG API END */
 
@@ -38,7 +41,7 @@ struct buffer {
 	log undo;
 	log redo;
 	char file_path[512];
-	u8 runes[1 << 30];
+	char runes[1 << 30];
 };
 
 static buffer_t buffers[1];
@@ -149,7 +152,7 @@ buffer_length(buffer_t handle) {
 int
 buffer_get(buffer_t handle, isize pos) {
 	buffer *buf = handle_lookup(handle);
-	return pos < buf->length ? buf->runes[pos] : -1;
+	return pos < buf->length ? buf->runes[pos] & 0xFF : -1;
 }
 
 int
@@ -220,53 +223,67 @@ erase_runes(buffer *buf, isize begin, isize end) {
 
 static void
 log_push_insert(log *log, isize at, isize length) {
-	if(log->top) {
-		log_entry *top = log->stack + log->top - 1;
+	log_entry *top = log_top(log);
 
-		if(top->type == entry_insert && top->at + top->length == at) {
-			top->length += length;
-			return;
-		}
+	if(top && top->type == entry_insert && top->at + top->length == at) {
+		top->length += length;
+	} else {
+		log_entry *new_entry = log->stack + log->top;
+		new_entry->type = entry_insert;
+		new_entry->at = at;
+		new_entry->length = length;
+		log->top = (log->top + 1) % countof(log->stack);
+		log->length = log->length < countof(log->stack) ? log->length + 1 : countof(log->stack);
 	}
-
-	assert(log->top < countof(log->stack));
-	log_entry *new_entry = log->stack + log->top++;
-	new_entry->type = entry_insert;
-	new_entry->at = at;
-	new_entry->length = length;
 }
 
 static void
 log_push_erase(log *log, buffer *buf, isize at, isize length) {
-	if(log->top) {
-		log_entry *top = log->stack + log->top - 1;
+	log_entry *top = log_top(log);
 
-		if(top->type == entry_erase && top->at == at + length) {
-			top->at = at;
+	if(top && top->type == entry_erase && top->at == at + length) {
+		top->at = at;
 
-			for(isize end = at + length; at < end;) {
-				top->erased[top->length++] = buf->runes[--end];
-			}
-
-			return;
+		for(isize end = at + length; at < end;) {
+			top->erased[top->length++] = buf->runes[--end];
 		}
+	} else {
+		log_entry *new_entry = log->stack + log->top;
+		new_entry->type = entry_erase;
+		new_entry->at = at;
+		new_entry->length = 0;
+
+		for(isize end = at + length; at < end;) {
+			new_entry->erased[new_entry->length++] = buf->runes[--end];
+		}
+
+		log->top = (log->top + 1) % countof(log->stack);
+		log->length = log->length < countof(log->stack) ? log->length + 1 : countof(log->stack);
+	}
+}
+
+static log_entry*
+log_top(log *log) {
+	if(log->length) {
+		return log->stack + (log->top - 1 + countof(log->stack)) % countof(log->stack);
 	}
 
-	assert(log->top < countof(log->stack));
-	log_entry *new_entry = log->stack + log->top++;
-	new_entry->type = entry_erase;
-	new_entry->at = at;
-	new_entry->length = 0;
+	return 0;
+}
 
-	for(isize end = at + length; at < end;) {
-		new_entry->erased[new_entry->length++] = buf->runes[--end];
-	}
+static void
+log_pop(log *log) {
+	assert(log->length);
+	log->top = (log->top - 1 + (int)countof(log->stack)) % (int)countof(log->stack);
+	log->length--;
 }
 
 static isize
 log_undo(log *undo, log *redo, buffer *buf) {
-	if(undo->top) {
-		log_entry *top = undo->stack + --undo->top;
+	log_entry *top = log_top(undo);
+
+	if(top) {
+		log_pop(undo);
 
 		switch(top->type) {
 			case entry_insert:
@@ -275,7 +292,7 @@ log_undo(log *undo, log *redo, buffer *buf) {
 				return top->at;
 
 			case entry_erase:
-				s8 tmp = {top->length, (char*)top->erased};
+				s8 tmp = {top->length, top->erased};
 				s8_reverse(&tmp);
 				log_push_insert(redo, top->at, top->length);
 				insert_runes(buf, top->at, tmp);
