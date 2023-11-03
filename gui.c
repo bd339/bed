@@ -182,7 +182,7 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 		selection[0] = set_cursor_pos(buffer_pos_at_xy(mouse_x, mouse_y));
 		selection[0] -= selection[0] == buffer_length(buffer);
 	} else if(event == mouse_drag) {
-		if(0 <= mouse_y && mouse_y < MARGIN) {
+		if(mouse_y < MARGIN) {
 			display_scroll(-1);
 		} else if(gui_dimensions().h - MARGIN < mouse_y) {
 			display_scroll(1);

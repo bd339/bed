@@ -89,7 +89,7 @@ buffer_insert(buffer_t handle, isize at, int rune) {
 	s8 runes = {1, (char*)&rune};
 	insert_runes(buf, at, runes);
 	log_push_insert(&buf->undo, at, 1);
-	buf->redo.top = 0;
+	buf->redo.length = buf->redo.top = 0;
 }
 
 void
@@ -97,7 +97,7 @@ buffer_insert_string(buffer_t handle, isize at, s8 str) {
 	buffer *buf = handle_lookup(handle);
 	insert_runes(buf, at, str);
 	log_push_insert(&buf->undo, at, str.length);
-	buf->redo.top = 0;
+	buf->redo.length = buf->redo.top = 0;
 }
 
 void
@@ -105,7 +105,7 @@ buffer_erase(buffer_t handle, isize at) {
 	buffer *buf = handle_lookup(handle);
 	log_push_erase(&buf->undo, buf, at, 1);
 	erase_runes(buf, at, at + 1);
-	buf->redo.top = 0;
+	buf->redo.length = buf->redo.top = 0;
 }
 
 void
@@ -113,7 +113,7 @@ buffer_erase_string(buffer_t handle, isize begin, isize end) {
 	buffer *buf = handle_lookup(handle);
 	log_push_erase(&buf->undo, buf, begin, end - begin);
 	erase_runes(buf, begin, end);
-	buf->redo.top = 0;
+	buf->redo.length = buf->redo.top = 0;
 }
 
 isize
