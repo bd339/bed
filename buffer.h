@@ -16,5 +16,7 @@ isize buffer_eol(buffer_t, isize);
 isize buffer_length(buffer_t);
 int buffer_get(buffer_t, isize);
 int buffer_save(buffer_t);
+isize buffer_undo(buffer_t);
+isize buffer_redo(buffer_t);
 
 #endif // BED_BUFFER_H

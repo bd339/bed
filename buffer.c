@@ -3,21 +3,49 @@
 #include <stdio.h>
 #include <string.h>
 
+/* LOG API BEGIN */
+
+typedef struct buffer buffer;
+
 typedef struct {
+	enum {
+		entry_insert,
+		entry_erase,
+	} type;
+	isize at;
+	isize length;
+	/* the erased runes IN REVERSE ORDER */
+	u8 erased[128];
+} log_entry;
+
+/* A log is a stack of editing operations represented by a ring buffer. */
+typedef struct {
+	log_entry stack[1000];
+	int top;
+} log;
+
+static void  log_push_insert(log*, isize, isize);
+static void  log_push_erase(log*, buffer*, isize, isize);
+static isize log_undo(log*, log*, buffer*);
+
+/* LOG API END */
+
+/* BUFFER IMPLEMENTATION BEGIN */
+
+struct buffer {
 	isize length;
 	u16 generation;
+	log undo;
+	log redo;
 	char file_path[512];
 	u8 runes[1 << 30];
-} buffer;
+};
 
 static buffer_t buffers[1];
 
-static buffer*
-handle_lookup(buffer_t handle) {
-	buffer *buf = (buffer*)(handle & 0xFFFFFFFFFFFF0000);
-	assert(buf->generation == (handle & 0xFFFF));
-	return buf;
-}
+static buffer *handle_lookup(buffer_t);
+static void insert_runes(buffer*, isize, s8);
+static void erase_runes(buffer*, isize, isize);
 
 buffer_t
 buffer_new(arena *arena, const char *file_path) {
@@ -53,43 +81,36 @@ buffer_free(buffer_t handle) {
 }
 
 void
-buffer_insert(buffer_t handle, isize pos, int rune) {
+buffer_insert(buffer_t handle, isize at, int rune) {
 	buffer *buf = handle_lookup(handle);
-	assert(pos <= buf->length);
-	assert(buf->length + 1 <= sizeof(buf->runes));
-	memmove(buf->runes + pos + 1, buf->runes + pos, (size_t)(buf->length - pos));
-	buf->runes[pos] = (u8)(rune & 0xFF);
-	buf->length++;
+	s8 runes = {1, (char*)&rune};
+	insert_runes(buf, at, runes);
+	log_push_insert(&buf->undo, at, 1);
+	buf->redo.top = 0;
 }
 
 void
-buffer_insert_string(buffer_t handle, isize pos, s8 str) {
+buffer_insert_string(buffer_t handle, isize at, s8 str) {
 	buffer *buf = handle_lookup(handle);
-	assert(pos <= buf->length);
-	assert(buf->length + str.length <= sizeof(buf->runes));
-	memmove(buf->runes + pos + str.length, buf->runes + pos, (size_t)(buf->length - pos));
-	memcpy(buf->runes + pos, str.data, (size_t)str.length);
-	buf->length += str.length;
+	insert_runes(buf, at, str);
+	log_push_insert(&buf->undo, at, str.length);
+	buf->redo.top = 0;
 }
 
 void
-buffer_erase(buffer_t handle, isize pos) {
+buffer_erase(buffer_t handle, isize at) {
 	buffer *buf = handle_lookup(handle);
-	assert(pos < buf->length);
-	memmove(buf->runes + pos, buf->runes + pos + 1, (size_t)(buf->length - (pos + 1)));
-	buf->length--;
+	log_push_erase(&buf->undo, buf, at, 1);
+	erase_runes(buf, at, at + 1);
+	buf->redo.top = 0;
 }
 
 void
 buffer_erase_string(buffer_t handle, isize begin, isize end) {
-	if(begin >= end) {
-		return;
-	}
-
 	buffer *buf = handle_lookup(handle);
-	assert(end <= buf->length);
-	memmove(buf->runes + begin, buf->runes + end, (size_t)(buf->length - end));
-	buf->length -= end - begin;
+	log_push_erase(&buf->undo, buf, begin, end - begin);
+	erase_runes(buf, begin, end);
+	buf->redo.top = 0;
 }
 
 isize
@@ -147,6 +168,129 @@ buffer_save(buffer_t handle) {
 		return 0;
 	}
 
+	buf->undo.top = 0;
+	buf->redo.top = 0;
+
 	fclose(file);
 	return 1;
 }
+
+isize
+buffer_undo(buffer_t handle) {
+	buffer *buf = handle_lookup(handle);
+	return log_undo(&buf->undo, &buf->redo, buf);
+}
+
+isize
+buffer_redo(buffer_t handle) {
+	buffer *buf = handle_lookup(handle);
+	return log_undo(&buf->redo, &buf->undo, buf);
+}
+
+static buffer*
+handle_lookup(buffer_t handle) {
+	buffer *buf = (buffer*)(handle & 0xFFFFFFFFFFFF0000);
+	assert(buf->generation == (handle & 0xFFFF));
+	return buf;
+}
+
+static void
+insert_runes(buffer *buf, isize at, s8 runes) {
+	assert(at <= buf->length);
+	assert(buf->length + 1 <= sizeof(buf->runes));
+	memmove(buf->runes + at + runes.length, buf->runes + at, (size_t)(buf->length - at));
+	memcpy(buf->runes + at, runes.data, (size_t)runes.length);
+	buf->length += runes.length;
+}
+
+static void
+erase_runes(buffer *buf, isize begin, isize end) {
+	if(begin >= end) {
+		return;
+	}
+
+	assert(end <= buf->length);
+	memmove(buf->runes + begin, buf->runes + end, (size_t)(buf->length - end));
+	buf->length -= end - begin;
+}
+
+/* BUFFER IMPLEMENTATION END */
+
+/* LOG IMPLEMENTATION BEGIN */
+
+static void
+log_push_insert(log *log, isize at, isize length) {
+	if(log->top) {
+		log_entry *top = log->stack + log->top - 1;
+
+		if(top->type == entry_insert && top->at + top->length == at) {
+			top->length += length;
+			return;
+		}
+	}
+
+	assert(log->top < countof(log->stack));
+	log_entry *new_entry = log->stack + log->top++;
+	new_entry->type = entry_insert;
+	new_entry->at = at;
+	new_entry->length = length;
+}
+
+static void
+log_push_erase(log *log, buffer *buf, isize at, isize length) {
+	if(log->top) {
+		log_entry *top = log->stack + log->top - 1;
+
+		if(top->type == entry_erase && top->at == at + length) {
+			top->at = at;
+
+			for(isize end = at + length; at < end;) {
+				top->erased[top->length++] = buf->runes[--end];
+			}
+
+			return;
+		}
+	}
+
+	assert(log->top < countof(log->stack));
+	log_entry *new_entry = log->stack + log->top++;
+	new_entry->type = entry_erase;
+	new_entry->at = at;
+	new_entry->length = 0;
+
+	for(isize end = at + length; at < end;) {
+		new_entry->erased[new_entry->length++] = buf->runes[--end];
+	}
+}
+
+static isize
+log_undo(log *undo, log *redo, buffer *buf) {
+	if(undo->top) {
+		log_entry *top = undo->stack + --undo->top;
+
+		switch(top->type) {
+			case entry_insert:
+				log_push_erase(redo, buf, top->at, top->length);
+				erase_runes(buf, top->at, top->at + top->length);
+				return top->at;
+
+			case entry_erase:
+				s8 tmp = {top->length, (char*)top->erased};
+				s8_reverse(&tmp);
+				log_push_insert(redo, top->at, top->length);
+				insert_runes(buf, top->at, tmp);
+				return top->at + top->length;
+		}
+	}
+
+	return -1;
+}
+
+/* LOG IMPLEMENTATION END */
+
+#ifdef TEST
+
+#define CLOVE_SUITE_NAME buffer.log
+#include "clove-unit.h"
+
+#endif // TEST

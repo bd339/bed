@@ -80,7 +80,7 @@ gui_redraw(arena memory) {
 	for(int i = 0; i < num_display_lines; ++i) {
 		s8 *line = push_text(&cmdbuf, x, y);
 		b32 cursor_on_line_i = 0;
-		int rune;
+		int rune = -1;
 
 		for(isize j = display_lines[i]; j < display_lines[i+1]; ++j) {
 			rune = buffer_get(buffer, j);
@@ -304,6 +304,18 @@ gui_keyboard(arena memory, gui_event event) {
 		if(!buffer_save(buffer)) {
 			// TODO: handle error
 		}
+	} else if(ch == 0x1A) { // Ctrl+z
+		isize where = buffer_undo(buffer);
+
+		if(where != -1) {
+			set_cursor_pos(where);
+		}
+	} else if(ch == 0x19) { // Ctrl+y
+		isize where = buffer_redo(buffer);
+
+		if(where != -1) {
+			set_cursor_pos(where);
+		}
 	} else {
 		buffer_insert(buffer, cursor_pos, ch);
 		set_cursor_pos(cursor_pos + 1);
@@ -390,7 +402,7 @@ push_text(arena *cmdbuf, int x, int y) {
 	cmd->meta = cmd_size << 2 | cmd_text;
 	cmd->x = x;
 	cmd->y = y;
-	cmd->runes.data = (u8*)cmd + sizeof(*cmd);
+	cmd->runes.data = (char*)cmd + sizeof(*cmd);
 	return &cmd->runes;
 }
 
