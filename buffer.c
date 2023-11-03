@@ -171,9 +171,6 @@ buffer_save(buffer_t handle) {
 		return 0;
 	}
 
-	buf->undo.top = 0;
-	buf->redo.top = 0;
-
 	fclose(file);
 	return 1;
 }
@@ -233,7 +230,7 @@ log_push_insert(log *log, isize at, isize length) {
 		new_entry->at = at;
 		new_entry->length = length;
 		log->top = (log->top + 1) % countof(log->stack);
-		log->length = log->length < countof(log->stack) ? log->length + 1 : countof(log->stack);
+		log->length += log->length < countof(log->stack);
 	}
 }
 
@@ -258,7 +255,7 @@ log_push_erase(log *log, buffer *buf, isize at, isize length) {
 		}
 
 		log->top = (log->top + 1) % countof(log->stack);
-		log->length = log->length < countof(log->stack) ? log->length + 1 : countof(log->stack);
+		log->length += log->length < countof(log->stack);
 	}
 }
 
