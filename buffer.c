@@ -29,6 +29,7 @@ static void       log_push_insert(log*, isize, isize);
 static void       log_push_erase(log*, buffer*, isize, isize);
 static log_entry *log_top(log*);
 static void       log_pop(log*);
+static void       log_clear(log*);
 static isize      log_undo(log*, log*, buffer*);
 
 /* LOG API END */
@@ -89,7 +90,7 @@ buffer_insert(buffer_t handle, isize at, int rune) {
 	s8 runes = {1, (char*)&rune};
 	insert_runes(buf, at, runes);
 	log_push_insert(&buf->undo, at, 1);
-	buf->redo.length = buf->redo.top = 0;
+	log_clear(&buf->redo);
 }
 
 void
@@ -97,7 +98,7 @@ buffer_insert_string(buffer_t handle, isize at, s8 str) {
 	buffer *buf = handle_lookup(handle);
 	insert_runes(buf, at, str);
 	log_push_insert(&buf->undo, at, str.length);
-	buf->redo.length = buf->redo.top = 0;
+	log_clear(&buf->redo);
 }
 
 void
@@ -105,7 +106,7 @@ buffer_erase(buffer_t handle, isize at) {
 	buffer *buf = handle_lookup(handle);
 	log_push_erase(&buf->undo, buf, at, 1);
 	erase_runes(buf, at, at + 1);
-	buf->redo.length = buf->redo.top = 0;
+	log_clear(&buf->redo);
 }
 
 void
@@ -113,7 +114,7 @@ buffer_erase_string(buffer_t handle, isize begin, isize end) {
 	buffer *buf = handle_lookup(handle);
 	log_push_erase(&buf->undo, buf, begin, end - begin);
 	erase_runes(buf, begin, end);
-	buf->redo.length = buf->redo.top = 0;
+	log_clear(&buf->redo);
 }
 
 isize
@@ -273,6 +274,11 @@ log_pop(log *log) {
 	assert(log->length);
 	log->top = (log->top - 1 + (int)countof(log->stack)) % (int)countof(log->stack);
 	log->length--;
+}
+
+static void
+log_clear(log *log) {
+	log->top = log->length = 0;
 }
 
 static isize
