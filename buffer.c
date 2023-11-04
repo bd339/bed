@@ -88,33 +88,41 @@ void
 buffer_insert(buffer_t handle, isize at, int rune) {
 	buffer *buf = handle_lookup(handle);
 	s8 runes = {1, (char*)&rune};
-	insert_runes(buf, at, runes);
 	log_push_insert(&buf->undo, at, 1);
 	log_clear(&buf->redo);
+	insert_runes(buf, at, runes);
 }
 
 void
-buffer_insert_string(buffer_t handle, isize at, s8 str) {
+buffer_insert_runes(buffer_t handle, isize at, s8 str) {
+	if(!str.length) {
+		return;
+	}
+
 	buffer *buf = handle_lookup(handle);
-	insert_runes(buf, at, str);
 	log_push_insert(&buf->undo, at, str.length);
 	log_clear(&buf->redo);
+	insert_runes(buf, at, str);
 }
 
 void
 buffer_erase(buffer_t handle, isize at) {
 	buffer *buf = handle_lookup(handle);
 	log_push_erase(&buf->undo, buf, at, 1);
-	erase_runes(buf, at, at + 1);
 	log_clear(&buf->redo);
+	erase_runes(buf, at, at + 1);
 }
 
 void
-buffer_erase_string(buffer_t handle, isize begin, isize end) {
+buffer_erase_runes(buffer_t handle, isize begin, isize end) {
+	if(begin >= end) {
+		return;
+	}
+
 	buffer *buf = handle_lookup(handle);
 	log_push_erase(&buf->undo, buf, begin, end - begin);
-	erase_runes(buf, begin, end);
 	log_clear(&buf->redo);
+	erase_runes(buf, begin, end);
 }
 
 isize
@@ -206,10 +214,7 @@ insert_runes(buffer *buf, isize at, s8 runes) {
 
 static void
 erase_runes(buffer *buf, isize begin, isize end) {
-	if(begin >= end) {
-		return;
-	}
-
+	assert(begin < end);
 	assert(end <= buf->length);
 	memmove(buf->runes + begin, buf->runes + end, (size_t)(buf->length - end));
 	buf->length -= end - begin;
@@ -295,10 +300,10 @@ log_undo(log *undo, log *redo, buffer *buf) {
 				return top->at;
 
 			case entry_erase:
-				s8 tmp = {top->length, top->erased};
-				s8_reverse(&tmp);
+				s8 erased = {top->length, top->erased};
+				s8_reverse(&erased);
 				log_push_insert(redo, top->at, top->length);
-				insert_runes(buf, top->at, tmp);
+				insert_runes(buf, top->at, erased);
 				return top->at + top->length;
 		}
 	}

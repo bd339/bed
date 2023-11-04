@@ -164,7 +164,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 
 		extern buffer_t buffer;
 		buffer = buffer_new(&memory, file_path);
-		buffer_insert_string(buffer, 0, file_contents);
+		buffer_insert_runes(buffer, 0, file_contents);
 
 		CloseHandle(file);
 		HeapFree(GetProcessHeap(), 0, file_contents.data);

@@ -257,7 +257,7 @@ gui_keyboard(arena memory, gui_event event) {
 	}
 
 	if(selection_valid) {
-		buffer_erase_string(buffer, selection_begin(), selection_end() + 1);
+		buffer_erase_runes(buffer, selection_begin(), selection_end() + 1);
 		set_cursor_pos(selection_begin());
 	}
 
@@ -298,13 +298,13 @@ gui_keyboard(arena memory, gui_event event) {
 			}
 		}
 
-		buffer_erase_string(buffer, whitespace, cursor_pos);
+		buffer_erase_runes(buffer, whitespace, cursor_pos);
 		set_cursor_pos(whitespace);
-		buffer_insert_string(buffer, cursor_pos, indent);
+		buffer_insert_runes(buffer, cursor_pos, indent);
 		set_cursor_pos(cursor_pos + indent.length);
-	} else if(ch == 0x15) {
+	} else if(ch == 0x15) { // Ctrl+u
 		isize bol = buffer_bol(buffer, cursor_pos);
-		buffer_erase_string(buffer, bol, cursor_pos);
+		buffer_erase_runes(buffer, bol, cursor_pos);
 		set_cursor_pos(bol);
 	} else if(ch == 0x13) { // Ctrl+s
 		if(!buffer_save(buffer)) {
