@@ -205,8 +205,9 @@ handle_lookup(buffer_t handle) {
 
 static void
 insert_runes(buffer *buf, isize at, s8 runes) {
+	assert(runes.length);
 	assert(at <= buf->length);
-	assert(buf->length + 1 <= sizeof(buf->runes));
+	assert(buf->length + runes.length <= sizeof(buf->runes));
 	memmove(buf->runes + at + runes.length, buf->runes + at, (size_t)(buf->length - at));
 	memcpy(buf->runes + at, runes.data, (size_t)runes.length);
 	buf->length += runes.length;
