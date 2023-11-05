@@ -332,8 +332,12 @@ log_undo(log *undo, log *redo, buffer *buf) {
 #define CLOVE_SUITE_NAME buffer_log
 #include "clove-unit.h"
 
+#ifdef _WIN32
+#define aligned_alloc(alignment, size) _aligned_malloc(size, alignment)
+#endif // _WIN32
+
 CLOVE_TEST(undo_empty_nop) {
-	buffer *buf = _aligned_malloc(sizeof(*buf) + 100 * 1024, 1 << 16);
+	buffer *buf = aligned_alloc(1 << 16, sizeof(*buf) + 100 * 1024);
 	CLOVE_IS_TRUE(buf);
 }
 
