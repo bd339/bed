@@ -1,6 +1,7 @@
 #include "buffer.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* LOG API BEGIN */
@@ -24,15 +25,14 @@ typedef struct {
 	log_entry stack[1000];
 	int top;
 	int length;
-	buffer *buf;
 } log;
 
 static void       log_push_insert(log*, isize, isize);
-static void       log_push_erase(log*, isize, isize);
+static void       log_push_erase(log*, buffer*, isize, isize);
 static log_entry *log_top(log*);
 static void       log_pop(log*);
 static void       log_clear(log*);
-static isize      log_undo(log*, log*);
+static isize      log_undo(log*, log*, buffer*);
 
 /* LOG API END */
 
@@ -43,7 +43,6 @@ struct buffer {
 	u16 generation;
 	log undo;
 	log redo;
-	arena arena;
 	char *file_path;
 	char runes[];
 };
@@ -60,12 +59,7 @@ buffer_new(arena *arena, const char *file_path) {
 		if(!buffers[i]) {
 			buffer *buf = arena_alloc(arena, sizeof(buffer) + (1 << 30), 1 << 16, 1, ALLOC_NOZERO);
 			buf->length = 0;
-			buf->undo.buf = buf->redo.buf = buf;
-			buf->file_path = arena_alloc(arena, 1, 1, (isize)strlen(file_path) + 1, 0);
-			buf->arena.begin = arena_alloc(arena, 1, 1, 1 << 20, ALLOC_NOZERO);
-			buf->arena.end = buf->arena.begin + (1 << 20);
-			buf->arena.offset = 0;
-			memcpy(buf->file_path, file_path, strlen(file_path));
+			buf->file_path = strdup(file_path);
 
 			FILE *file = fopen(file_path, "rb");
 			static char iobuf[8 * 1024];
@@ -98,7 +92,11 @@ void
 buffer_free(buffer_t handle) {
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(buffers[i] == handle) {
-			handle_lookup(handle)->generation++;
+			buffer *buf = handle_lookup(handle);
+			buf->generation++;
+			log_clear(&buf->undo);
+			log_clear(&buf->redo);
+			free(buf->file_path);
 			buffers[i] = 0;
 			return;
 		}
@@ -129,7 +127,7 @@ buffer_insert_runes(buffer_t handle, isize at, s8 str) {
 void
 buffer_erase(buffer_t handle, isize at) {
 	buffer *buf = handle_lookup(handle);
-	log_push_erase(&buf->undo, at, 1);
+	log_push_erase(&buf->undo, buf, at, 1);
 	log_clear(&buf->redo);
 	erase_runes(buf, at, at + 1);
 }
@@ -138,7 +136,7 @@ void
 buffer_erase_runes(buffer_t handle, isize begin, isize end) {
 	if(begin < end) {
 		buffer *buf = handle_lookup(handle);
-		log_push_erase(&buf->undo, begin, end - begin);
+		log_push_erase(&buf->undo, buf, begin, end - begin);
 		log_clear(&buf->redo);
 		erase_runes(buf, begin, end);
 	}
@@ -206,13 +204,13 @@ buffer_save(buffer_t handle) {
 isize
 buffer_undo(buffer_t handle) {
 	buffer *buf = handle_lookup(handle);
-	return log_undo(&buf->undo, &buf->redo);
+	return log_undo(&buf->undo, &buf->redo, buf);
 }
 
 isize
 buffer_redo(buffer_t handle) {
 	buffer *buf = handle_lookup(handle);
-	return log_undo(&buf->redo, &buf->undo);
+	return log_undo(&buf->redo, &buf->undo, buf);
 }
 
 static buffer*
@@ -259,18 +257,14 @@ log_push_insert(log *log, isize at, isize length) {
 }
 
 static void
-log_push_erase(log *log, isize at, isize length) {
+log_push_erase(log *log, buffer *buf, isize at, isize length) {
 	log_entry *top = log->stack + log->top;
 	top->type = entry_erase;
 	top->at = at;
-	top->erased.data = arena_alloc(&log->buf->arena, 1, 1, length, ALLOC_NOZERO | ALLOC_RETNULL);
+	top->erased.data = malloc((size_t)length);
 	top->erased.length = length;
-
-	if(!top->erased.data) {
-		return;
-	}
-
-	memcpy(top->erased.data, log->buf->runes + at, (size_t)length);
+	assert(top->erased.data);
+	memcpy(top->erased.data, buf->runes + at, (size_t)length);
 	log->top = (log->top + 1) % countof(log->stack);
 	log->length += log->length < countof(log->stack);
 }
@@ -292,43 +286,55 @@ log_pop(log *log) {
 	log_entry *top = log->stack + log->top;
 
 	if(top->type == entry_erase) {
-		log->buf->arena.offset -= top->erased.length;
+		free(top->erased.data);
 	}
 }
 
 static void
 log_clear(log *log) {
-	log->top = log->length = 0;
+	while(log->length) {
+		log_pop(log);
+	}
 }
 
 static isize
-log_undo(log *undo, log *redo) {
+log_undo(log *undo, log *redo, buffer *buf) {
+	isize where = -1;
 	log_entry *top = log_top(undo);
 
 	if(top) {
-		log_pop(undo);
-
 		switch(top->type) {
 			case entry_insert:
-				log_push_erase(redo, top->at, top->length);
-				erase_runes(undo->buf, top->at, top->at + top->length);
-				return top->at;
+				log_push_erase(redo, buf, top->at, top->length);
+				erase_runes(buf, top->at, top->at + top->length);
+				where = top->at;
+				break;
 
 			case entry_erase:
 				log_push_insert(redo, top->at, top->erased.length);
-				insert_runes(undo->buf, top->at, top->erased);
-				return top->at + top->erased.length;
+				insert_runes(buf, top->at, top->erased);
+				where = top->at + top->erased.length;
+				break;
 		}
+
+		log_pop(undo);
 	}
 
-	return -1;
+	return where;
 }
 
 /* LOG IMPLEMENTATION END */
 
 #ifdef TEST
 
-#define CLOVE_SUITE_NAME buffer.log
+#include <stdlib.h>
+
+#define CLOVE_SUITE_NAME buffer_log
 #include "clove-unit.h"
+
+CLOVE_TEST(undo_empty_nop) {
+	buffer *buf = _aligned_malloc(sizeof(*buf) + 100 * 1024, 1 << 16);
+	CLOVE_IS_TRUE(buf);
+}
 
 #endif // TEST
