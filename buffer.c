@@ -13,9 +13,10 @@ typedef struct {
 		entry_erase,
 	} type;
 	isize at;
-	isize length;
-	/* the erased runes IN REVERSE ORDER */
-	char erased[128];
+	union {
+		isize length;
+		s8 erased;
+	};
 } log_entry;
 
 /* A log is a stack of editing operations represented by a ring buffer. */
@@ -41,8 +42,9 @@ struct buffer {
 	u16 generation;
 	log undo;
 	log redo;
-	char file_path[512];
-	char runes[1 << 30];
+	arena arena;
+	char *file_path;
+	char runes[];
 };
 
 static buffer_t buffers[1];
@@ -55,15 +57,34 @@ buffer_t
 buffer_new(arena *arena, const char *file_path) {
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(!buffers[i]) {
-			buffer *buf = arena_alloc(arena, sizeof(buffer), 1 << 16, 1, ALLOC_NOZERO);
+			buffer *buf = arena_alloc(arena, sizeof(buffer) + (1 << 30), 1 << 16, 1, ALLOC_NOZERO);
+			buf->length = 0;
+			buf->file_path = arena_alloc(arena, 1, 1, (isize)strlen(file_path) + 1, 0);
+			buf->arena.begin = arena_alloc(arena, 1, 1, 1 << 20, ALLOC_NOZERO);
+			buf->arena.end = buf->arena.begin + (1 << 20);
+			buf->arena.offset = 0;
+			memcpy(buf->file_path, file_path, strlen(file_path));
 
-			if(strlen(file_path) < countof(buf->file_path)) {
-				memcpy(buf->file_path, file_path, strlen(file_path) + 1);
-			} else {
+			FILE *file = fopen(file_path, "rb");
+			static char iobuf[8 * 1024];
+
+			if(!file) {
 				return 0;
 			}
 
-			buf->length = 0;
+			while(!feof(file)) {
+				size_t read = fread(iobuf, 1, countof(iobuf), file);
+
+				if(read < countof(iobuf) && ferror(file)) {
+					fclose(file);
+					return 0;
+				}
+
+				memcpy(buf->runes + buf->length, iobuf, read);
+				buf->length += (isize)read;
+			}
+
+			fclose(file);
 			return buffers[i] = (buffer_t)buf | buf->generation;
 		}
 	}
@@ -95,14 +116,12 @@ buffer_insert(buffer_t handle, isize at, int rune) {
 
 void
 buffer_insert_runes(buffer_t handle, isize at, s8 str) {
-	if(!str.length) {
-		return;
+	if(str.length) {
+		buffer *buf = handle_lookup(handle);
+		log_push_insert(&buf->undo, at, str.length);
+		log_clear(&buf->redo);
+		insert_runes(buf, at, str);
 	}
-
-	buffer *buf = handle_lookup(handle);
-	log_push_insert(&buf->undo, at, str.length);
-	log_clear(&buf->redo);
-	insert_runes(buf, at, str);
 }
 
 void
@@ -115,14 +134,12 @@ buffer_erase(buffer_t handle, isize at) {
 
 void
 buffer_erase_runes(buffer_t handle, isize begin, isize end) {
-	if(begin >= end) {
-		return;
+	if(begin < end) {
+		buffer *buf = handle_lookup(handle);
+		log_push_erase(&buf->undo, buf, begin, end - begin);
+		log_clear(&buf->redo);
+		erase_runes(buf, begin, end);
 	}
-
-	buffer *buf = handle_lookup(handle);
-	log_push_erase(&buf->undo, buf, begin, end - begin);
-	log_clear(&buf->redo);
-	erase_runes(buf, begin, end);
 }
 
 isize
@@ -205,9 +222,7 @@ handle_lookup(buffer_t handle) {
 
 static void
 insert_runes(buffer *buf, isize at, s8 runes) {
-	assert(runes.length);
 	assert(at <= buf->length);
-	assert(buf->length + runes.length <= sizeof(buf->runes));
 	memmove(buf->runes + at + runes.length, buf->runes + at, (size_t)(buf->length - at));
 	memcpy(buf->runes + at, runes.data, (size_t)runes.length);
 	buf->length += runes.length;
@@ -232,10 +247,10 @@ log_push_insert(log *log, isize at, isize length) {
 	if(top && top->type == entry_insert && top->at + top->length == at) {
 		top->length += length;
 	} else {
-		log_entry *new_entry = log->stack + log->top;
-		new_entry->type = entry_insert;
-		new_entry->at = at;
-		new_entry->length = length;
+		top = log->stack + log->top;
+		top->type = entry_insert;
+		top->at = at;
+		top->length = length;
 		log->top = (log->top + 1) % countof(log->stack);
 		log->length += log->length < countof(log->stack);
 	}
@@ -243,27 +258,29 @@ log_push_insert(log *log, isize at, isize length) {
 
 static void
 log_push_erase(log *log, buffer *buf, isize at, isize length) {
-	log_entry *top = log_top(log);
+	static b32 retry;
 
-	if(top && top->type == entry_erase && top->at == at + length) {
-		top->at = at;
+	log_entry *top = log->stack + log->top;
+	top->type = entry_erase;
+	top->at = at;
+	top->erased.data = arena_alloc(&buf->arena, 1, 1, length, ALLOC_NOZERO | ALLOC_RETNULL);
+	top->erased.length = length;
 
-		for(isize end = at + length; at < end;) {
-			top->erased[top->length++] = buf->runes[--end];
-		}
-	} else {
-		log_entry *new_entry = log->stack + log->top;
-		new_entry->type = entry_erase;
-		new_entry->at = at;
-		new_entry->length = 0;
-
-		for(isize end = at + length; at < end;) {
-			new_entry->erased[new_entry->length++] = buf->runes[--end];
+	if(!top->erased.data) {
+		if(retry) {
+			return;
 		}
 
-		log->top = (log->top + 1) % countof(log->stack);
-		log->length += log->length < countof(log->stack);
+		retry = 1;
+		buf->arena.offset = 0;
+		log_push_erase(log, buf, at, length);
+		retry = 0;
+		return;
 	}
+
+	memcpy(top->erased.data, buf->runes + at, (size_t)length);
+	log->top = (log->top + 1) % countof(log->stack);
+	log->length += log->length < countof(log->stack);
 }
 
 static log_entry*
@@ -301,11 +318,9 @@ log_undo(log *undo, log *redo, buffer *buf) {
 				return top->at;
 
 			case entry_erase:
-				s8 erased = {top->length, top->erased};
-				s8_reverse(&erased);
-				log_push_insert(redo, top->at, top->length);
-				insert_runes(buf, top->at, erased);
-				return top->at + top->length;
+				log_push_insert(redo, top->at, top->erased.length);
+				insert_runes(buf, top->at, top->erased);
+				return top->at + top->erased.length;
 		}
 	}
 

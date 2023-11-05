@@ -126,7 +126,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 }
 
 int WINAPI
-WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdShow) {
 	memory.begin = VirtualAlloc(0, MEM_SIZE, MEM_RESERVE, PAGE_NOACCESS);
 	memory.end = memory.begin + MEM_SIZE;
 
@@ -136,39 +136,11 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdS
 
 	AddVectoredExceptionHandler(1, &access_violation_handler);
 
-	{
-		HANDLE file = CreateFile(lpCmdLine, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+	char file_path[MAX_PATH];
+	GetFullPathName(lpCmdline, MAX_PATH, file_path, 0);
 
-		if(file == INVALID_HANDLE_VALUE) {
-			return 4;
-		}
-
-		LARGE_INTEGER file_size;
-
-		if(!GetFileSizeEx(file, &file_size)) {
-			return 5;
-		}
-
-		s8 file_contents;
-		file_contents.data = HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, (SIZE_T)file_size.QuadPart);
-		file_contents.length = file_size.QuadPart;
-
-		unsigned long bytes_read;
-
-		if(!ReadFile(file, file_contents.data, file_size.u.LowPart, &bytes_read, 0)) {
-			return 6;
-		}
-
-		char file_path[MAX_PATH];
-		GetFullPathName(lpCmdLine, MAX_PATH, file_path, 0);
-
-		extern buffer_t buffer;
-		buffer = buffer_new(&memory, file_path);
-		buffer_insert_runes(buffer, 0, file_contents);
-
-		CloseHandle(file);
-		HeapFree(GetProcessHeap(), 0, file_contents.data);
-	}
+	extern buffer_t buffer;
+	buffer = buffer_new(&memory, file_path);
 
 	WNDCLASS window_class      = {0};
 	window_class.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
