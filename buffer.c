@@ -24,14 +24,15 @@ typedef struct {
 	log_entry stack[1000];
 	int top;
 	int length;
+	buffer *buf;
 } log;
 
 static void       log_push_insert(log*, isize, isize);
-static void       log_push_erase(log*, buffer*, isize, isize);
+static void       log_push_erase(log*, isize, isize);
 static log_entry *log_top(log*);
 static void       log_pop(log*);
 static void       log_clear(log*);
-static isize      log_undo(log*, log*, buffer*);
+static isize      log_undo(log*, log*);
 
 /* LOG API END */
 
@@ -59,6 +60,7 @@ buffer_new(arena *arena, const char *file_path) {
 		if(!buffers[i]) {
 			buffer *buf = arena_alloc(arena, sizeof(buffer) + (1 << 30), 1 << 16, 1, ALLOC_NOZERO);
 			buf->length = 0;
+			buf->undo.buf = buf->redo.buf = buf;
 			buf->file_path = arena_alloc(arena, 1, 1, (isize)strlen(file_path) + 1, 0);
 			buf->arena.begin = arena_alloc(arena, 1, 1, 1 << 20, ALLOC_NOZERO);
 			buf->arena.end = buf->arena.begin + (1 << 20);
@@ -127,7 +129,7 @@ buffer_insert_runes(buffer_t handle, isize at, s8 str) {
 void
 buffer_erase(buffer_t handle, isize at) {
 	buffer *buf = handle_lookup(handle);
-	log_push_erase(&buf->undo, buf, at, 1);
+	log_push_erase(&buf->undo, at, 1);
 	log_clear(&buf->redo);
 	erase_runes(buf, at, at + 1);
 }
@@ -136,7 +138,7 @@ void
 buffer_erase_runes(buffer_t handle, isize begin, isize end) {
 	if(begin < end) {
 		buffer *buf = handle_lookup(handle);
-		log_push_erase(&buf->undo, buf, begin, end - begin);
+		log_push_erase(&buf->undo, begin, end - begin);
 		log_clear(&buf->redo);
 		erase_runes(buf, begin, end);
 	}
@@ -204,13 +206,13 @@ buffer_save(buffer_t handle) {
 isize
 buffer_undo(buffer_t handle) {
 	buffer *buf = handle_lookup(handle);
-	return log_undo(&buf->undo, &buf->redo, buf);
+	return log_undo(&buf->undo, &buf->redo);
 }
 
 isize
 buffer_redo(buffer_t handle) {
 	buffer *buf = handle_lookup(handle);
-	return log_undo(&buf->redo, &buf->undo, buf);
+	return log_undo(&buf->redo, &buf->undo);
 }
 
 static buffer*
@@ -257,28 +259,18 @@ log_push_insert(log *log, isize at, isize length) {
 }
 
 static void
-log_push_erase(log *log, buffer *buf, isize at, isize length) {
-	static b32 retry;
-
+log_push_erase(log *log, isize at, isize length) {
 	log_entry *top = log->stack + log->top;
 	top->type = entry_erase;
 	top->at = at;
-	top->erased.data = arena_alloc(&buf->arena, 1, 1, length, ALLOC_NOZERO | ALLOC_RETNULL);
+	top->erased.data = arena_alloc(&log->buf->arena, 1, 1, length, ALLOC_NOZERO | ALLOC_RETNULL);
 	top->erased.length = length;
 
 	if(!top->erased.data) {
-		if(retry) {
-			return;
-		}
-
-		retry = 1;
-		buf->arena.offset = 0;
-		log_push_erase(log, buf, at, length);
-		retry = 0;
 		return;
 	}
 
-	memcpy(top->erased.data, buf->runes + at, (size_t)length);
+	memcpy(top->erased.data, log->buf->runes + at, (size_t)length);
 	log->top = (log->top + 1) % countof(log->stack);
 	log->length += log->length < countof(log->stack);
 }
@@ -297,6 +289,11 @@ log_pop(log *log) {
 	assert(log->length);
 	log->top = (log->top - 1 + (int)countof(log->stack)) % (int)countof(log->stack);
 	log->length--;
+	log_entry *top = log->stack + log->top;
+
+	if(top->type == entry_erase) {
+		log->buf->arena.offset -= top->erased.length;
+	}
 }
 
 static void
@@ -305,7 +302,7 @@ log_clear(log *log) {
 }
 
 static isize
-log_undo(log *undo, log *redo, buffer *buf) {
+log_undo(log *undo, log *redo) {
 	log_entry *top = log_top(undo);
 
 	if(top) {
@@ -313,13 +310,13 @@ log_undo(log *undo, log *redo, buffer *buf) {
 
 		switch(top->type) {
 			case entry_insert:
-				log_push_erase(redo, buf, top->at, top->length);
-				erase_runes(buf, top->at, top->at + top->length);
+				log_push_erase(redo, top->at, top->length);
+				erase_runes(undo->buf, top->at, top->at + top->length);
 				return top->at;
 
 			case entry_erase:
 				log_push_insert(redo, top->at, top->erased.length);
-				insert_runes(buf, top->at, top->erased);
+				insert_runes(undo->buf, top->at, top->erased);
 				return top->at + top->erased.length;
 		}
 	}
