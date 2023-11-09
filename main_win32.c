@@ -50,12 +50,13 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			gui_mouse(mouse_left, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 			break;
 
-		case WM_MOUSEWHEEL:
+		case WM_MOUSEWHEEL: {
 			int delta = GET_WHEEL_DELTA_WPARAM(wParam);
 			int x = GET_X_LPARAM(lParam);
 			int y = GET_Y_LPARAM(lParam);
 			gui_mouse(delta > 0 ? mouse_scrollup : mouse_scrolldown, x, y);
 			break;
+		}
 
 		case WM_MOUSEMOVE:
 			if(wParam & MK_LBUTTON) {
@@ -65,7 +66,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 
-		case WM_PAINT:
+		case WM_PAINT: {
 			PAINTSTRUCT ps;
 			HDC hdc = BeginPaint(window, &ps);
 			BitBlt(hdc,
@@ -79,6 +80,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			       SRCCOPY);
 			EndPaint(window, &ps);
 			break;
+		}
 
 		case WM_TIMER:
 			if(wParam == 1) {
@@ -88,7 +90,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 
-		case WM_SIZE:
+		case WM_SIZE: {
 			extern unsigned *pixels;
 			static HBITMAP bitmap;
 
@@ -105,14 +107,20 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			bitmap_info.bmiHeader.biWidth       =  LOWORD(lParam);
 			bitmap_info.bmiHeader.biHeight      = -HIWORD(lParam);
 
+			void *rgb;
 			backbuffer = CreateCompatibleDC(0);
-			bitmap = CreateDIBSection(0, &bitmap_info, DIB_RGB_COLORS, (void**)&pixels, 0, 0);
+			bitmap = CreateDIBSection(0, &bitmap_info, DIB_RGB_COLORS, &rgb, 0, 0);
 			SelectObject(backbuffer, bitmap);
 			SelectObject(backbuffer, GetStockObject(SYSTEM_FIXED_FONT));
 			SetBkMode(backbuffer, TRANSPARENT);
 
+			if(rgb) {
+				pixels = rgb;
+			}
+
 			gui_reflow();
 			break;
+		}
 
 		case WM_DESTROY:
 			PostQuitMessage(0);

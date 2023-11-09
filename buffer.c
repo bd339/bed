@@ -29,7 +29,7 @@ typedef struct {
 
 static void       log_push_insert(log*, isize, isize);
 static void       log_push_erase(log*, buffer*, isize, isize);
-static log_entry *log_top(log*);
+static log_entry* log_top(log*);
 static void       log_pop(log*);
 static void       log_clear(log*);
 static isize      log_undo(log*, log*, buffer*);
@@ -55,27 +55,22 @@ static void erase_runes(buffer*, isize, isize);
 
 buffer_t
 buffer_new(arena *arena, const char *file_path) {
+	buffer *buf = 0;
+	FILE *file = 0;
+
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(!buffers[i]) {
-			buffer *buf = arena_alloc(arena, sizeof(buffer) + (1 << 30), 1 << 16, 1, ALLOC_NOZERO);
+			buf = arena_alloc(arena, sizeof(buffer) + (1 << 30), 1 << 16, 1, ALLOC_NOZERO);
 			buf->length = 0;
 			buf->file_path = strdup(file_path);
 
-			FILE *file = fopen(file_path, "rb");
+			file = fopen(file_path, "rb");
+			if(!file) goto FAIL;
 			static char iobuf[8 * 1024];
-
-			if(!file) {
-				return 0;
-			}
 
 			while(!feof(file)) {
 				size_t read = fread(iobuf, 1, countof(iobuf), file);
-
-				if(read < countof(iobuf) && ferror(file)) {
-					fclose(file);
-					return 0;
-				}
-
+				if(read < countof(iobuf) && ferror(file)) goto FAIL;
 				memcpy(buf->runes + buf->length, iobuf, read);
 				buf->length += (isize)read;
 			}
@@ -85,6 +80,9 @@ buffer_new(arena *arena, const char *file_path) {
 		}
 	}
 
+FAIL:
+	if(buf)  free(buf->file_path);
+	if(file) fclose(file);
 	return 0;
 }
 
@@ -337,7 +335,7 @@ log_undo(log *undo, log *redo, buffer *buf) {
 #endif // _WIN32
 
 CLOVE_TEST(undo_empty_nop) {
-	buffer *buf = aligned_alloc(1 << 16, sizeof(*buf) + 100 * 1024);
+	buffer *buf = aligned_alloc(1 << 16, sizeof(*buf) + 100);
 	CLOVE_IS_TRUE(buf);
 }
 
