@@ -59,6 +59,7 @@ static isize selection_end(void);
 static void display_scroll(int);
 static isize buffer_pos_at_xy(int, int);
 static isize set_cursor_pos(isize);
+static void erase_selection(void);
 
 /* GUI IMPLEMENTATION BEGIN */
 
@@ -256,75 +257,100 @@ gui_keyboard(arena memory, gui_event event) {
 		return;
 	}
 
-	if(selection_valid) {
-		buffer_erase_runes(buffer, selection_begin(), selection_end() + 1);
-		set_cursor_pos(selection_begin());
-	}
-
 	enum {
+		ctrl_c    = 0x03,
 		backspace = 0x08,
 		enter     = 0x0D,
+		ctrl_s    = 0x13,
+		ctrl_u    = 0x15,
+		ctrl_v    = 0x16,
+		ctrl_x    = 0x18,
+		ctrl_y    = 0x19,
+		ctrl_z    = 0x1A,
 	} ch = event - kbd_char;
 
 	if(ch == backspace) {
-		if(cursor_pos > 0) {
+		if(selection_valid) {
+			erase_selection();
+		} else if(cursor_pos > 0) {
 			buffer_erase(buffer, set_cursor_pos(cursor_pos - 1));
 		}
-	} else if(ch == enter || ch == '\n') {
-		s8 indent = {0};
-		indent.data = arena_alloc(&memory, 1, 1, 80, 0);
-		s8_append(&indent, '\n');
-
-		isize bol = buffer_bol(buffer, cursor_pos);
-		isize eol = buffer_eol(buffer, cursor_pos);
-
-		for(isize i = bol; i < eol; ++i) {
-			int rune = buffer_get(buffer, i);
-
-			if(rune != ' ' && rune != '\t') {
-				break;
-			}
-
-			s8_append(&indent, rune);
+	} else if(ch == ctrl_u) {
+		if(selection_valid) {
+			erase_selection();
+		} else {
+			isize bol = buffer_bol(buffer, cursor_pos);
+			buffer_erase_runes(buffer, bol, cursor_pos);
+			set_cursor_pos(bol);
 		}
-
-		isize whitespace = cursor_pos;
-
-		for(; whitespace > bol; --whitespace) {
-			int rune = buffer_get(buffer, whitespace - 1);
-
-			if(rune != ' ' && rune != '\t') {
-				break;
-			}
-		}
-
-		buffer_erase_runes(buffer, whitespace, cursor_pos);
-		set_cursor_pos(whitespace);
-		buffer_insert_runes(buffer, cursor_pos, indent);
-		set_cursor_pos(cursor_pos + indent.length);
-	} else if(ch == 0x15) { // Ctrl+u
-		isize bol = buffer_bol(buffer, cursor_pos);
-		buffer_erase_runes(buffer, bol, cursor_pos);
-		set_cursor_pos(bol);
-	} else if(ch == 0x13) { // Ctrl+s
+	} else if(ch == ctrl_s) {
 		if(!buffer_save(buffer)) {
 			// TODO: handle error
 		}
-	} else if(ch == 0x1A) { // Ctrl+z
+	} else if(ch == ctrl_z) {
 		isize where = buffer_undo(buffer);
 
 		if(where != -1) {
 			set_cursor_pos(where);
 		}
-	} else if(ch == 0x19) { // Ctrl+y
+	} else if(ch == ctrl_y) {
 		isize where = buffer_redo(buffer);
 
 		if(where != -1) {
 			set_cursor_pos(where);
 		}
+	} else if(ch == ctrl_c || ch == ctrl_x) {
+		if(selection_valid) {
+			gui_clipboard_copy(buffer, selection_begin(), selection_end() + 1);
+		}
+
+		if(ch == ctrl_x) {
+			erase_selection();
+		}
+	} else if(ch == ctrl_v) {
+		s8 clipboard = gui_clipboard_get();
+		erase_selection();
+		buffer_insert_runes(buffer, cursor_pos, clipboard);
+		set_cursor_pos(cursor_pos + clipboard.length);
 	} else {
-		buffer_insert(buffer, cursor_pos, ch);
-		set_cursor_pos(cursor_pos + 1);
+		erase_selection();
+
+		if(ch == enter || ch == '\n') {
+			s8 indent = {0};
+			indent.data = arena_alloc(&memory, 1, 1, 80, 0);
+			s8_append(&indent, '\n');
+
+			isize bol = buffer_bol(buffer, cursor_pos);
+			isize eol = buffer_eol(buffer, cursor_pos);
+
+			for(isize i = bol; i < eol; ++i) {
+				int rune = buffer_get(buffer, i);
+
+				if(rune != ' ' && rune != '\t') {
+					break;
+				}
+
+				s8_append(&indent, rune);
+			}
+
+			isize whitespace = cursor_pos;
+
+			for(; whitespace > bol; --whitespace) {
+				int rune = buffer_get(buffer, whitespace - 1);
+
+				if(rune != ' ' && rune != '\t') {
+					break;
+				}
+			}
+
+			buffer_erase_runes(buffer, whitespace, cursor_pos);
+			set_cursor_pos(whitespace);
+			buffer_insert_runes(buffer, cursor_pos, indent);
+			set_cursor_pos(cursor_pos + indent.length);
+		} else {
+			buffer_insert(buffer, cursor_pos, ch);
+			set_cursor_pos(cursor_pos + 1);
+		}
 	}
 
 	gui_reflow();
@@ -534,4 +560,12 @@ set_cursor_pos(isize pos) {
 	cursor_pos = pos;
 	selection_valid = 0;
 	return cursor_pos;
+}
+
+static void
+erase_selection(void) {
+	if(selection_valid) {
+		buffer_erase_runes(buffer, selection_begin(), selection_end() + 1);
+		set_cursor_pos(selection_begin());
+	}
 }

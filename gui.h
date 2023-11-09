@@ -1,6 +1,7 @@
 #ifndef BED_GUI_H
 #define BED_GUI_H
 
+#include "buffer.h"
 #include "util.h"
 
 typedef unsigned color;
@@ -24,6 +25,8 @@ typedef enum {
 	kbd_char,
 } gui_event;
 
+void gui_clipboard_copy(buffer_t, isize, isize);
+s8   gui_clipboard_get(void);
 int gui_font_width(int);
 int gui_font_height(void);
 dimensions gui_dimensions(void);

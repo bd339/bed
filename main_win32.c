@@ -193,6 +193,35 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 
 /* GUI IMPLEMENTATION BEGIN */
 
+void
+gui_clipboard_copy(buffer_t buffer, isize begin, isize end) {
+	OpenClipboard(window);
+	EmptyClipboard();
+	HGLOBAL mem = GlobalAlloc(GHND, (SIZE_T)(end - begin + 1));
+	char *ptr = GlobalLock(mem);
+
+	for(isize i = begin; i < end; ++i) {
+		*ptr++ = (char)buffer_get(buffer, i);
+	}
+
+	GlobalUnlock(mem);
+	SetClipboardData(CF_TEXT, mem);
+	CloseClipboard();
+}
+
+s8
+gui_clipboard_get(void) {
+	s8 contents = {0};
+	OpenClipboard(window);
+	HGLOBAL mem = GetClipboardData(CF_TEXT);
+	if(!mem) return contents;
+	contents.data = GlobalLock(mem);
+	contents.length = (isize)strlen(contents.data);
+	GlobalUnlock(mem);
+	CloseClipboard();
+	return contents;
+}
+
 int
 gui_font_width(int rune) {
 	int width;
