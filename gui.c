@@ -53,13 +53,13 @@ static isize display_lines[128];
 /* 0 .. num_display_lines - 1 are the visible display lines. */
 static int num_display_lines;
 
-static int rune_width(int);
+static isize buffer_pos_at_xy(int, int);
+static void  display_scroll(int);
+static void  erase_selection(void);
+static int   rune_width(int);
 static isize selection_begin(void);
 static isize selection_end(void);
-static void display_scroll(int);
-static isize buffer_pos_at_xy(int, int);
 static isize set_cursor_pos(isize);
-static void erase_selection(void);
 
 /* GUI IMPLEMENTATION BEGIN */
 
@@ -287,14 +287,8 @@ gui_keyboard(arena memory, gui_event event) {
 		if(!buffer_save(buffer)) {
 			// TODO: handle error
 		}
-	} else if(ch == ctrl_z) {
-		isize where = buffer_undo(buffer);
-
-		if(where != -1) {
-			set_cursor_pos(where);
-		}
-	} else if(ch == ctrl_y) {
-		isize where = buffer_redo(buffer);
+	} else if(ch == ctrl_z || ch == ctrl_y) {
+		isize where = ch == ctrl_z ? buffer_undo(buffer) : buffer_redo(buffer);
 
 		if(where != -1) {
 			set_cursor_pos(where);
@@ -502,23 +496,6 @@ push_end(arena *cmdbuf) {
 
 /* DEFERRED RENDERING IMPLEMENTATION END */
 
-static int
-rune_width(int rune) {
-	return rune == '\t' ? 4 * gui_font_width(' ') : gui_font_width(rune);
-}
-
-static isize
-selection_begin(void) {
-	assert(selection_valid);
-	return selection[0] < selection[1] ? selection[0] : selection[1];
-}
-
-static isize
-selection_end(void) {
-	assert(selection_valid);
-	return selection[0] < selection[1] ? selection[1] : selection[0];
-}
-
 static isize
 buffer_pos_at_xy(int x, int y) {
 	int line = (y - MARGIN) / gui_font_height();
@@ -553,6 +530,31 @@ display_scroll(int num_lines) {
 	gui_reflow();
 }
 
+static void
+erase_selection(void) {
+	if(selection_valid) {
+		buffer_erase_runes(buffer, selection_begin(), selection_end() + 1);
+		set_cursor_pos(selection_begin());
+	}
+}
+
+static int
+rune_width(int rune) {
+	return rune == '\t' ? 4 * gui_font_width(' ') : gui_font_width(rune);
+}
+
+static isize
+selection_begin(void) {
+	assert(selection_valid);
+	return selection[0] < selection[1] ? selection[0] : selection[1];
+}
+
+static isize
+selection_end(void) {
+	assert(selection_valid);
+	return selection[0] < selection[1] ? selection[1] : selection[0];
+}
+
 static isize
 set_cursor_pos(isize pos) {
 	cursor_state = 0;
@@ -560,12 +562,4 @@ set_cursor_pos(isize pos) {
 	cursor_pos = pos;
 	selection_valid = 0;
 	return cursor_pos;
-}
-
-static void
-erase_selection(void) {
-	if(selection_valid) {
-		buffer_erase_runes(buffer, selection_begin(), selection_end() + 1);
-		set_cursor_pos(selection_begin());
-	}
 }
