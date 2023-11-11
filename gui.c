@@ -1,9 +1,14 @@
 #include "buffer.h"
 #include "gui.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#define MARGIN 5
+#define MARGIN_TOP   5
+#define MARGIN_BOT   gui_font_height()
+#define MARGIN_L     5
+#define MARGIN_R     5
 
 /* DEFERRED RENDERING API BEGIN */
 
@@ -15,7 +20,7 @@ typedef enum {
 
 static arena push_begin(arena);
 static void  push_rect(arena*, layer, int, int, int, int, color);
-static s8*   push_text(arena*, int, int);
+static s8*   push_text(arena*, int, int, color);
 static void  push_cursor(arena*, int, int, int);
 static void  push_end(arena*);
 
@@ -26,22 +31,23 @@ unsigned *pixels;
 
 /* GUI STATE VARIABLES BEGIN */
 
-static isize cursor_pos;
-static int   cursor_x;
 /*
- * cursor_state implements blinking of the cursor.
- * Whenever you update the cursor position you must reset cursor_state.
- * Therefore you should update cursor_pos using set_cursor_pos().
+ * Buffer position of the cursor.
+ * NOTE: ONLY UPDATE THIS WITH set_cursor_pos().
  */
+static isize cursor_pos;
+/* Target x of the cursor when moving between lines */
+static int   cursor_x;
+/* Implements blinking of the cursor */
 static int   cursor_state;
 static b32   selection_valid;
 /*
  * selection[0] is the buffer position of the first rune in the selection.
  * selection[1] is the buffer position of the last rune in the selection.
- * NOTICE: selection[1] < selection[0] is perfectly valid and reasonable.
- * If this is a problem for you, use selection_begin() and selection_end().
+ * NOTE: To get the selection use selection_begin and selection_end().
  */
 static isize selection[2];
+b32 warn_unsaved_changes;
 
 /* GUI STATE VARIABLES END */
 
@@ -68,18 +74,42 @@ gui_redraw(arena memory) {
 	arena cmdbuf = push_begin(memory);
 	dimensions dim = gui_dimensions();
 	color magenta = rgb(255, 0, 255);
-	push_rect(&cmdbuf, layer_bg, MARGIN, MARGIN, dim.w - 2*MARGIN, dim.h - MARGIN, rgb(255, 255, 234));
-	push_rect(&cmdbuf, layer_bg, 0, 0, dim.w, MARGIN, magenta);
-	push_rect(&cmdbuf, layer_bg, 0, 0, MARGIN, dim.h, magenta);
-	push_rect(&cmdbuf, layer_bg, dim.w - MARGIN, 0, MARGIN, dim.h, magenta);
+	color bg_color = rgb(255, 255, 234);
+	push_rect(&cmdbuf, layer_bg, MARGIN_L, MARGIN_TOP, dim.w - MARGIN_L - MARGIN_R, dim.h - MARGIN_BOT, bg_color);
+	push_rect(&cmdbuf, layer_bg, 0, 0, dim.w, MARGIN_TOP, magenta);
+	push_rect(&cmdbuf, layer_bg, 0, 0, MARGIN_L, dim.h, magenta);
+	push_rect(&cmdbuf, layer_bg, dim.w - MARGIN_R, 0, MARGIN_R, dim.h, magenta);
 
-	int x = MARGIN;
-	int y = MARGIN;
+	{ // Draw buffer tag line
+		color tag_color  = warn_unsaved_changes ? rgb(255, 0, 0)     : rgb(231, 255, 221);
+		color text_color = warn_unsaved_changes ? rgb(255, 255, 255) : rgb(0, 0, 0);
+		push_rect(&cmdbuf, layer_bg, 0, dim.h - MARGIN_BOT, dim.w, MARGIN_BOT, tag_color);
+		s8 *buffer_label = push_text(&cmdbuf, MARGIN_L, dim.h - gui_font_height(), text_color);
+		const char *file_path = buffer_file_path(buffer);
+		size_t file_path_length = strlen(file_path);
+		memcpy(buffer_label->data, file_path, file_path_length);
+		buffer_label->length = (isize)file_path_length;
 
-	cursor_state = cursor_state >= 60 ? 0 : cursor_state + 1;
+		if(warn_unsaved_changes) {
+			const char warning[] = " has unsaved changes.";
+			memcpy(buffer_label->data + buffer_label->length, warning, countof(warning));
+			buffer_label->length += countof(warning);
+		} else if(buffer_is_dirty(buffer)) {
+			s8_append(buffer_label, '*');
+		}
+
+		s8 *line_label = push_text(&cmdbuf, dim.w - MARGIN_R - 75, dim.h - gui_font_height(), text_color);
+		line_info li = buffer_line_info(buffer, cursor_pos);
+		line_label->length = sprintf(line_label->data, "%d,%d", li.line, li.col);
+	}
+
+	int x = MARGIN_L;
+	int y = MARGIN_TOP;
+
+	cursor_state = (cursor_state + 1) % 60;
 
 	for(int i = 0; i < num_display_lines; ++i) {
-		s8 *line = push_text(&cmdbuf, x, y);
+		s8 *line = push_text(&cmdbuf, x, y, rgb(0, 0, 0));
 		b32 cursor_on_line_i = 0;
 		int rune = -1;
 
@@ -132,10 +162,10 @@ gui_redraw(arena memory) {
 		if(rune != '\n' && rune != -1) {
 			/* last rune on current line was not a newline i.e. current line was wrapped */
 			color green = rgb(0, 255, 0);
-			push_rect(&cmdbuf, layer_fg, dim.w - MARGIN, y, MARGIN, gui_font_height(), green);
+			push_rect(&cmdbuf, layer_fg, dim.w - MARGIN_R, y, MARGIN_R, gui_font_height(), green);
 		}
 
-		x = MARGIN;
+		x = MARGIN_L;
 		y += gui_font_height();
 	}
 
@@ -146,12 +176,13 @@ gui_redraw(arena memory) {
 void
 gui_reflow(void) {
 	dimensions dim = gui_dimensions();
-	int x = MARGIN;
-	int y = MARGIN;
+	int x = MARGIN_L;
+	int y = MARGIN_TOP;
+	int display_bot = dim.h - MARGIN_BOT - gui_font_height();
 
 	num_display_lines = 0;
 
-	for(isize i = display_lines[0]; y < dim.h - gui_font_height(); ++i) {
+	for(isize i = display_lines[0]; y < display_bot; ++i) {
 		int rune = buffer_get(buffer, i);
 
 		if(rune == -1) {
@@ -163,11 +194,11 @@ gui_reflow(void) {
 
 		if(rune == '\n') {
 			display_lines[++num_display_lines] = i+1;
-			x = MARGIN;
+			x = MARGIN_L;
 			y += gui_font_height();
-		} else if(x + width > dim.w - MARGIN) {
+		} else if(x + width > dim.w - MARGIN_R) {
 			display_lines[++num_display_lines] = i;
-			x = MARGIN + width;
+			x = MARGIN_L + width;
 			y += gui_font_height();
 		} else {
 			x += width;
@@ -183,9 +214,9 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 		selection[0] = set_cursor_pos(buffer_pos_at_xy(mouse_x, mouse_y));
 		selection[0] -= selection[0] == buffer_length(buffer);
 	} else if(event == mouse_drag) {
-		if(mouse_y < MARGIN) {
+		if(mouse_y < MARGIN_TOP) {
 			display_scroll(-1);
-		} else if(gui_dimensions().h - MARGIN < mouse_y) {
+		} else if(gui_dimensions().h - MARGIN_BOT < mouse_y) {
 			display_scroll(1);
 		}
 
@@ -212,7 +243,7 @@ gui_keyboard(arena memory, gui_event event) {
 					i = num_display_lines - 2;
 				}
 
-				int x = cursor_x ? cursor_x : MARGIN;
+				int x = cursor_x ? cursor_x : MARGIN_L;
 
 				if(!cursor_x) {
 					for(isize j = display_lines[i]; j <= cursor_pos; ++j) {
@@ -223,7 +254,7 @@ gui_keyboard(arena memory, gui_event event) {
 				set_cursor_pos(event == kbd_up ? display_lines[i-1] : display_lines[i+1]);
 				isize stop = event == kbd_up ? display_lines[i] : display_lines[i+2];
 
-				for(int next_x = MARGIN;; ++cursor_pos) {
+				for(int next_x = MARGIN_L;; ++cursor_pos) {
 					if(cursor_pos == stop) {
 						cursor_x = x;
 						cursor_pos--;
@@ -287,11 +318,17 @@ gui_keyboard(arena memory, gui_event event) {
 		if(!buffer_save(buffer)) {
 			// TODO: handle error
 		}
+
+		warn_unsaved_changes = 0;
 	} else if(ch == ctrl_z || ch == ctrl_y) {
 		isize where = ch == ctrl_z ? buffer_undo(buffer) : buffer_redo(buffer);
 
 		if(where != -1) {
 			set_cursor_pos(where);
+		}
+
+		if(!buffer_is_dirty(buffer)) {
+			warn_unsaved_changes = 0;
 		}
 	} else if(ch == ctrl_c || ch == ctrl_x) {
 		if(selection_valid) {
@@ -350,6 +387,18 @@ gui_keyboard(arena memory, gui_event event) {
 	gui_reflow();
 }
 
+b32
+gui_exit(void) {
+	if(buffer_is_dirty(buffer)) {
+		if(!warn_unsaved_changes) {
+			warn_unsaved_changes = 1;
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
 /* GUI IMPLEMENTATION END */
 
 /* DEFERRED RENDERING IMPLEMENTATION BEGIN */
@@ -374,6 +423,7 @@ typedef struct {
 	int meta;
 	int x;
 	int y;
+	color rgb;
 	s8 runes;
 } text_cmd;
 
@@ -422,12 +472,13 @@ push_rect(arena *cmdbuf, layer layer, int x, int y, int w, int h, color rgb) {
 }
 
 static s8*
-push_text(arena *cmdbuf, int x, int y) {
+push_text(arena *cmdbuf, int x, int y, color rgb) {
 	int cmd_size = sizeof(text_cmd) + 512;
 	text_cmd *cmd = arena_alloc(cmdbuf, cmd_size, CMD_ALIGN, 1, 0);
 	cmd->meta = cmd_size << 2 | cmd_text;
 	cmd->x = x;
 	cmd->y = y;
+	cmd->rgb = rgb;
 	cmd->runes.data = (char*)cmd + sizeof(*cmd);
 	return &cmd->runes;
 }
@@ -470,6 +521,7 @@ push_end(arena *cmdbuf) {
 				}
 			} else if(cmd == cmd_text && layer == layer_text) {
 				text_cmd *text = (text_cmd*)it;
+				gui_set_text_color(text->rgb);
 				gui_text(text->x, text->y, text->runes);
 			} else if(cmd == cmd_cursor && layer == layer_fg) {
 				cursor_cmd *cursor = (cursor_cmd*)it;
@@ -498,8 +550,8 @@ push_end(arena *cmdbuf) {
 
 static isize
 buffer_pos_at_xy(int x, int y) {
-	int line = (y - MARGIN) / gui_font_height();
-	int line_x = MARGIN;
+	int line = (y - MARGIN_TOP) / gui_font_height();
+	int line_x = MARGIN_L;
 
 	if(line >= num_display_lines) {
 		line = num_display_lines - 1;

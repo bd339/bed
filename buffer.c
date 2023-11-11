@@ -195,6 +195,9 @@ buffer_save(buffer_t handle) {
 		return 0;
 	}
 
+	log_clear(&buf->undo);
+	log_clear(&buf->redo);
+
 	fclose(file);
 	return 1;
 }
@@ -209,6 +212,34 @@ isize
 buffer_redo(buffer_t handle) {
 	buffer *buf = handle_lookup(handle);
 	return log_undo(&buf->redo, &buf->undo, buf);
+}
+
+const char*
+buffer_file_path(buffer_t handle) {
+	buffer *buf = handle_lookup(handle);
+	return buf->file_path;
+}
+
+line_info
+buffer_line_info(buffer_t handle, isize at) {
+	buffer *buf = handle_lookup(handle);
+	line_info li = {0};
+
+	for(isize i = 0; i < at; ++i) {
+		li.line += buf->runes[i] == '\n';
+		li.col  *= buf->runes[i] != '\n';
+		li.col  += buf->runes[i] != '\n';
+	}
+
+	li.col++;
+	li.line++;
+	return li;
+}
+
+b32
+buffer_is_dirty(buffer_t handle) {
+	buffer *buf = handle_lookup(handle);
+	return buf->undo.length != 0;
 }
 
 static buffer*

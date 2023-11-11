@@ -122,6 +122,12 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			break;
 		}
 
+		case WM_CLOSE:
+			if(gui_exit()) {
+				DestroyWindow(window);
+			}
+			break;
+
 		case WM_DESTROY:
 			PostQuitMessage(0);
 			break;
@@ -246,4 +252,9 @@ gui_dimensions(void) {
 void
 gui_text(int x, int y, s8 str) {
 	TextOut(backbuffer, x, y, (char*)str.data, (int)str.length);
+}
+
+void
+gui_set_text_color(color rgb) {
+	SetTextColor(backbuffer, RGB(rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb >> 0 & 0xFF));
 }
