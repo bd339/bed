@@ -47,7 +47,7 @@ static b32   selection_valid;
  * NOTE: To get the selection use selection_begin and selection_end().
  */
 static isize selection[2];
-b32 warn_unsaved_changes;
+static b32   warn_unsaved_changes;
 
 /* GUI STATE VARIABLES END */
 
@@ -271,116 +271,109 @@ gui_keyboard(arena memory, gui_event event) {
 				break;
 			}
 		}
-	}
-
-	if(event == kbd_left || event == kbd_right) {
-		if(cursor_pos < display_lines[0]) {
-			display_lines[0] = buffer_bol(buffer, cursor_pos);
-			gui_reflow();
-		} else {
-			while(cursor_pos >= display_lines[num_display_lines]) {
-				display_scroll(1);
-			}
-		}
-	}
-
-	if(event < kbd_char) {
-		return;
-	}
-
-	enum {
-		ctrl_c    = 0x03,
-		backspace = 0x08,
-		enter     = 0x0D,
-		ctrl_s    = 0x13,
-		ctrl_u    = 0x15,
-		ctrl_v    = 0x16,
-		ctrl_x    = 0x18,
-		ctrl_y    = 0x19,
-		ctrl_z    = 0x1A,
-	} ch = event - kbd_char;
-
-	if(ch == backspace) {
-		if(selection_valid) {
-			erase_selection();
-		} else if(cursor_pos > 0) {
-			buffer_erase(buffer, set_cursor_pos(cursor_pos - 1));
-		}
-	} else if(ch == ctrl_u) {
-		if(selection_valid) {
-			erase_selection();
-		} else {
-			isize bol = buffer_bol(buffer, cursor_pos);
-			buffer_erase_runes(buffer, bol, cursor_pos);
-			set_cursor_pos(bol);
-		}
-	} else if(ch == ctrl_s) {
-		if(!buffer_save(buffer)) {
-			// TODO: handle error
-		}
-
-		warn_unsaved_changes = 0;
-	} else if(ch == ctrl_z || ch == ctrl_y) {
-		isize where = ch == ctrl_z ? buffer_undo(buffer) : buffer_redo(buffer);
-
-		if(where != -1) {
-			set_cursor_pos(where);
-		}
-
-		if(!buffer_is_dirty(buffer)) {
-			warn_unsaved_changes = 0;
-		}
-	} else if(ch == ctrl_c || ch == ctrl_x) {
-		if(selection_valid) {
-			gui_clipboard_copy(buffer, selection_begin(), selection_end() + 1);
-		}
-
-		if(ch == ctrl_x) {
-			erase_selection();
-		}
-	} else if(ch == ctrl_v) {
-		s8 clipboard = gui_clipboard_get();
-		erase_selection();
-		buffer_insert_runes(buffer, cursor_pos, clipboard);
-		set_cursor_pos(cursor_pos + clipboard.length);
 	} else {
-		erase_selection();
+		enum {
+			ctrl_c    = 0x03,
+			backspace = 0x08,
+			enter     = 0x0D,
+			ctrl_s    = 0x13,
+			ctrl_u    = 0x15,
+			ctrl_v    = 0x16,
+			ctrl_x    = 0x18,
+			ctrl_y    = 0x19,
+			ctrl_z    = 0x1A,
+		} ch = event - kbd_char;
 
-		if(ch == enter || ch == '\n') {
-			s8 indent = {0};
-			indent.data = arena_alloc(&memory, 1, 1, 80, 0);
-			s8_append(&indent, '\n');
-
-			isize bol = buffer_bol(buffer, cursor_pos);
-			isize eol = buffer_eol(buffer, cursor_pos);
-
-			for(isize i = bol; i < eol; ++i) {
-				int rune = buffer_get(buffer, i);
-
-				if(rune != ' ' && rune != '\t') {
-					break;
-				}
-
-				s8_append(&indent, rune);
+		if(ch == backspace) {
+			if(selection_valid) {
+				erase_selection();
+			} else if(cursor_pos > 0) {
+				buffer_erase(buffer, set_cursor_pos(cursor_pos - 1));
+			}
+		} else if(ch == ctrl_u) {
+			if(selection_valid) {
+				erase_selection();
+			} else {
+				isize bol = buffer_bol(buffer, cursor_pos);
+				buffer_erase_runes(buffer, bol, cursor_pos);
+				set_cursor_pos(bol);
+			}
+		} else if(ch == ctrl_s) {
+			if(!buffer_save(buffer)) {
+				// TODO: handle error
 			}
 
-			isize whitespace = cursor_pos;
+			warn_unsaved_changes = 0;
+		} else if(ch == ctrl_z || ch == ctrl_y) {
+			isize where = ch == ctrl_z ? buffer_undo(buffer) : buffer_redo(buffer);
 
-			for(; whitespace > bol; --whitespace) {
-				int rune = buffer_get(buffer, whitespace - 1);
-
-				if(rune != ' ' && rune != '\t') {
-					break;
-				}
+			if(where != -1) {
+				set_cursor_pos(where);
 			}
 
-			buffer_erase_runes(buffer, whitespace, cursor_pos);
-			set_cursor_pos(whitespace);
-			buffer_insert_runes(buffer, cursor_pos, indent);
-			set_cursor_pos(cursor_pos + indent.length);
+			if(!buffer_is_dirty(buffer)) {
+				warn_unsaved_changes = 0;
+			}
+		} else if(ch == ctrl_c || ch == ctrl_x) {
+			if(selection_valid) {
+				gui_clipboard_copy(buffer, selection_begin(), selection_end() + 1);
+			}
+
+			if(ch == ctrl_x) {
+				erase_selection();
+			}
+		} else if(ch == ctrl_v) {
+			s8 clipboard = gui_clipboard_get();
+			erase_selection();
+			buffer_insert_runes(buffer, cursor_pos, clipboard);
+			set_cursor_pos(cursor_pos + clipboard.length);
 		} else {
-			buffer_insert(buffer, cursor_pos, ch);
-			set_cursor_pos(cursor_pos + 1);
+			erase_selection();
+
+			if(ch == enter || ch == '\n') {
+				s8 indent = {0};
+				indent.data = arena_alloc(&memory, 1, 1, 80, 0);
+				s8_append(&indent, '\n');
+
+				isize bol = buffer_bol(buffer, cursor_pos);
+				isize eol = buffer_eol(buffer, cursor_pos);
+
+				for(isize i = bol; i < eol; ++i) {
+					int rune = buffer_get(buffer, i);
+
+					if(rune != ' ' && rune != '\t') {
+						break;
+					}
+
+					s8_append(&indent, rune);
+				}
+
+				isize whitespace = cursor_pos;
+
+				for(; whitespace > bol; --whitespace) {
+					int rune = buffer_get(buffer, whitespace - 1);
+
+					if(rune != ' ' && rune != '\t') {
+						break;
+					}
+				}
+
+				buffer_erase_runes(buffer, whitespace, cursor_pos);
+				set_cursor_pos(whitespace);
+				buffer_insert_runes(buffer, cursor_pos, indent);
+				set_cursor_pos(cursor_pos + indent.length);
+			} else {
+				buffer_insert(buffer, cursor_pos, ch);
+				set_cursor_pos(cursor_pos + 1);
+			}
+		}
+	}
+
+	if(cursor_pos < display_lines[0]) {
+		display_lines[0] = buffer_bol(buffer, cursor_pos);
+	} else {
+		while(cursor_pos >= display_lines[num_display_lines]) {
+			display_scroll(1);
 		}
 	}
 
