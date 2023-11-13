@@ -156,6 +156,10 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 	extern buffer_t buffer;
 	buffer = buffer_new(&memory, file_path);
 
+	if(!buffer) {
+		return 4;
+	}
+
 	WNDCLASS window_class      = {0};
 	window_class.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	window_class.lpfnWndProc   = window_proc;
@@ -256,5 +260,8 @@ gui_text(int x, int y, s8 str) {
 
 void
 gui_set_text_color(color rgb) {
-	SetTextColor(backbuffer, RGB(rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb >> 0 & 0xFF));
+	DWORD r = rgb >> 16 & 0xFF;
+	DWORD g = rgb >>  8 & 0xFF;
+	DWORD b = rgb >>  0 & 0xFF;
+	SetTextColor(backbuffer, RGB(r, g, b));
 }

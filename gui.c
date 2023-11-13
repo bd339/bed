@@ -92,8 +92,8 @@ gui_redraw(arena memory) {
 
 		if(warn_unsaved_changes) {
 			const char warning[] = " has unsaved changes.";
-			memcpy(buffer_label->data + buffer_label->length, warning, countof(warning));
-			buffer_label->length += countof(warning);
+			memcpy(buffer_label->data + buffer_label->length, warning, lengthof(warning));
+			buffer_label->length += lengthof(warning);
 		} else if(buffer_is_dirty(buffer)) {
 			s8_append(buffer_label, '*');
 		}
@@ -236,11 +236,11 @@ gui_keyboard(arena memory, gui_event event) {
 		for(int i = 0; i < num_display_lines; ++i) {
 			if(cursor_pos < display_lines[i+1]) {
 				if(i == 0 && event == kbd_up) {
-					display_scroll(-1);
 					i = 1;
-				} else if(i == num_display_lines - 1 && event == kbd_down) {
-					display_scroll(1);
+					display_scroll(-1);
+				} else if(i == num_display_lines - 1 && event == kbd_down && num_display_lines > 1) {
 					i = num_display_lines - 2;
+					display_scroll(1);
 				}
 
 				int x = cursor_x ? cursor_x : MARGIN_L;
@@ -371,7 +371,7 @@ gui_keyboard(arena memory, gui_event event) {
 
 	if(cursor_pos < display_lines[0]) {
 		display_lines[0] = buffer_bol(buffer, cursor_pos);
-	} else {
+	} else if(cursor_pos < buffer_length(buffer)) {
 		while(cursor_pos >= display_lines[num_display_lines]) {
 			display_scroll(1);
 		}
