@@ -30,6 +30,9 @@ access_violation_handler(EXCEPTION_POINTERS *ExceptionInfo) {
 
 LRESULT CALLBACK
 window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+	static int drag_x;
+	static int drag_y;
+
 	switch(message) {
 		case WM_CHAR:
 			gui_keyboard(memory, kbd_char + (wParam & 0xFF));
@@ -46,8 +49,14 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 
+		case WM_LBUTTONUP:
+			drag_x = drag_y = 0;
+			break;
+
 		case WM_LBUTTONDOWN:
-			gui_mouse(mouse_left, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+			drag_x = GET_X_LPARAM(lParam);
+			drag_y = GET_Y_LPARAM(lParam);
+			gui_mouse(mouse_left, drag_x, drag_y);
 			break;
 
 		case WM_MOUSEWHEEL: {
@@ -62,7 +71,12 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			if(wParam & MK_LBUTTON) {
 				int x = GET_X_LPARAM(lParam);
 				int y = GET_Y_LPARAM(lParam);
-				gui_mouse(mouse_drag, x, y);
+				int drag_w = GetSystemMetrics(SM_CXDRAG);
+				int drag_h = GetSystemMetrics(SM_CYDRAG);
+
+				if(x < drag_x - drag_w || x > drag_x + drag_w || y < drag_y - drag_h || y > drag_y + drag_h) {
+					gui_mouse(mouse_drag, x, y);
+				}
 			}
 			break;
 
