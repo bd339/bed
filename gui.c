@@ -70,10 +70,11 @@ static isize set_cursor_pos(isize);
 
 void
 gui_redraw(arena memory) {
-	arena cmdbuf = push_begin(memory);
+	arena cmdbuf   = push_begin(memory);
 	dimensions dim = gui_dimensions();
-	color magenta = rgb(255, 0, 255);
+	color magenta  = rgb(255, 0, 255);
 	color bg_color = rgb(255, 255, 234);
+
 	push_rect(&cmdbuf, layer_bg, MARGIN_L, MARGIN_TOP, dim.w - MARGIN_L - MARGIN_R, dim.h - MARGIN_BOT, bg_color);
 	push_rect(&cmdbuf, layer_bg, 0, 0, dim.w, MARGIN_TOP, magenta);
 	push_rect(&cmdbuf, layer_bg, 0, 0, MARGIN_L, dim.h, magenta);
@@ -278,6 +279,7 @@ gui_keyboard(arena memory, gui_event event) {
 			ctrl_s    = 0x13,
 			ctrl_u    = 0x15,
 			ctrl_v    = 0x16,
+			ctrl_w    = 0x17,
 			ctrl_x    = 0x18,
 			ctrl_y    = 0x19,
 			ctrl_z    = 0x1A,
@@ -326,6 +328,19 @@ gui_keyboard(arena memory, gui_event event) {
 			erase_selection();
 			buffer_insert_runes(buffer, cursor_pos, clipboard);
 			set_cursor_pos(cursor_pos + clipboard.length);
+		} else if(ch == ctrl_w) {
+			isize whitespace = cursor_pos;
+
+			for(isize bol = buffer_bol(buffer, cursor_pos); whitespace > bol; --whitespace) {
+				int rune = buffer_get(buffer, whitespace - 1);
+
+				if(rune == ' ' || rune == '\t') {
+					break;
+				}
+			}
+
+			buffer_erase_runes(buffer, whitespace, cursor_pos);
+			set_cursor_pos(whitespace);
 		} else {
 			erase_selection();
 

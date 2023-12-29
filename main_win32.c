@@ -49,10 +49,6 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 
-		case WM_LBUTTONUP:
-			drag_x = drag_y = 0;
-			break;
-
 		case WM_LBUTTONDOWN:
 			drag_x = GET_X_LPARAM(lParam);
 			drag_y = GET_Y_LPARAM(lParam);
@@ -83,15 +79,17 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 		case WM_PAINT: {
 			PAINTSTRUCT ps;
 			HDC hdc = BeginPaint(window, &ps);
-			BitBlt(hdc,
-			       ps.rcPaint.left,
-			       ps.rcPaint.top,
-			       ps.rcPaint.right  - ps.rcPaint.left,
-			       ps.rcPaint.bottom - ps.rcPaint.top,
-			       backbuffer,
-			       ps.rcPaint.left,
-			       ps.rcPaint.top,
-			       SRCCOPY);
+			BitBlt(
+				hdc,
+				ps.rcPaint.left,
+				ps.rcPaint.top,
+				ps.rcPaint.right  - ps.rcPaint.left,
+				ps.rcPaint.bottom - ps.rcPaint.top,
+				backbuffer,
+				ps.rcPaint.left,
+				ps.rcPaint.top,
+				SRCCOPY
+			);
 			EndPaint(window, &ps);
 			break;
 		}
@@ -185,17 +183,19 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 		return 2;
 	}
 
-	window = CreateWindow(window_class.lpszClassName,
-	                      "Benjamin's Editor",
-	                      WS_OVERLAPPEDWINDOW,
-	                      CW_USEDEFAULT,
-	                      CW_USEDEFAULT,
-	                      CW_USEDEFAULT,
-	                      CW_USEDEFAULT,
-	                      0,
-	                      0,
-	                      hInstance,
-	                      0);
+	window = CreateWindow(
+		window_class.lpszClassName,
+		"Benjamin's Editor",
+		WS_OVERLAPPEDWINDOW,
+		CW_USEDEFAULT,
+		CW_USEDEFAULT,
+		CW_USEDEFAULT,
+		CW_USEDEFAULT,
+		0,
+		0,
+		hInstance,
+		0
+	);
 
 	if(!window) {
 		return 3;
