@@ -9,6 +9,9 @@
 #define MARGIN_L     0
 #define MARGIN_R     5
 
+#define DEFAULT_COLOR rgb(0, 0, 0)
+#define COMMENT_COLOR rgb(128, 128, 128)
+
 /* DEFERRED RENDERING API BEGIN */
 
 typedef enum {
@@ -110,7 +113,7 @@ gui_redraw(arena memory) {
 		cursor_state = (cursor_state + 1) % 60;
 	}
 
-	color text_color = rgb(0, 0, 0);
+	color text_color = DEFAULT_COLOR;
 
 	for(int i = 0; i < num_display_lines; ++i) {
 		s8 *line = push_text(&cmdbuf, x, y, text_color);
@@ -161,8 +164,8 @@ gui_redraw(arena memory) {
 				if(line->length && line->data[line->length - 1] == '/') {
 					if(rune == '*' || rune == '/') {
 						line->length--;
-						text_color = rune == '*' ? rgb(128, 128, 128) : text_color;
-						line = push_text(&cmdbuf, x - rune_width('/'), y, rgb(128, 128, 128));
+						text_color = rune == '*' ? COMMENT_COLOR : text_color;
+						line = push_text(&cmdbuf, x - rune_width('/'), y, COMMENT_COLOR);
 						s8_append(line, '/');
 					}
 				}
@@ -171,7 +174,7 @@ gui_redraw(arena memory) {
 
 				/* check if we are on the end of a block comment */
 				if(line->length >= 2 && line->data[line->length - 2] == '*' && rune == '/') {
-					text_color = rgb(0, 0, 0);
+					text_color = DEFAULT_COLOR;
 					line = push_text(&cmdbuf, x + width, y, text_color);
 				}
 
