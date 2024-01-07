@@ -110,8 +110,10 @@ gui_redraw(arena memory) {
 		cursor_state = (cursor_state + 1) % 60;
 	}
 
+	color text_color = rgb(0, 0, 0);
+
 	for(int i = 0; i < num_display_lines; ++i) {
-		s8 *line = push_text(&cmdbuf, x, y, rgb(0, 0, 0));
+		s8 *line = push_text(&cmdbuf, x, y, text_color);
 		b32 cursor_on_line_i = 0;
 		int rune = -1;
 
@@ -155,7 +157,24 @@ gui_redraw(arena memory) {
 				memcpy(line->data + line->length, "    ", 4);
 				line->length += 4;
 			} else {
+				/* check if we are on the start of a comment */
+				if(line->length && line->data[line->length - 1] == '/') {
+					if(rune == '*' || rune == '/') {
+						line->length--;
+						text_color = rune == '*' ? rgb(128, 128, 128) : text_color;
+						line = push_text(&cmdbuf, x - rune_width('/'), y, rgb(128, 128, 128));
+						s8_append(line, '/');
+					}
+				}
+
 				s8_append(line, rune);
+
+				/* check if we are on the end of a block comment */
+				if(line->length >= 2 && line->data[line->length - 2] == '*' && rune == '/') {
+					text_color = rgb(0, 0, 0);
+					line = push_text(&cmdbuf, x + width, y, text_color);
+				}
+
 			}
 
 			x += width;
