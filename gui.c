@@ -7,7 +7,7 @@
 #define MARGIN_TOP   0
 #define MARGIN_BOT   gui_font_height()
 #define MARGIN_L     0
-#define MARGIN_R     0
+#define MARGIN_R     5
 
 /* DEFERRED RENDERING API BEGIN */
 
