@@ -279,3 +279,7 @@ gui_set_text_color(color rgb) {
 	DWORD b = rgb >>  0 & 0xFF;
 	SetTextColor(backbuffer, RGB(r, g, b));
 }
+
+b32 gui_is_active(void) {
+	return window == GetActiveWindow();
+}

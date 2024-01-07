@@ -37,5 +37,6 @@ void gui_reflow(void);
 void gui_mouse(gui_event, int, int);
 void gui_keyboard(arena, gui_event);
 b32  gui_exit(void);
+b32  gui_is_active(void);
 
 #endif // BED_GUI_H

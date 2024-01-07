@@ -4,10 +4,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MARGIN_TOP   5
+#define MARGIN_TOP   0
 #define MARGIN_BOT   gui_font_height()
-#define MARGIN_L     5
-#define MARGIN_R     5
+#define MARGIN_L     0
+#define MARGIN_R     0
 
 /* DEFERRED RENDERING API BEGIN */
 
@@ -75,7 +75,7 @@ gui_redraw(arena memory) {
 	color magenta  = rgb(255, 0, 255);
 	color bg_color = rgb(255, 255, 234);
 
-	push_rect(&cmdbuf, layer_bg, MARGIN_L, MARGIN_TOP, dim.w - MARGIN_L - MARGIN_R, dim.h - MARGIN_BOT, bg_color);
+	push_rect(&cmdbuf, layer_bg, 0, 0, dim.w, dim.h, bg_color);
 	push_rect(&cmdbuf, layer_bg, 0, 0, dim.w, MARGIN_TOP, magenta);
 	push_rect(&cmdbuf, layer_bg, 0, 0, MARGIN_L, dim.h, magenta);
 	push_rect(&cmdbuf, layer_bg, dim.w - MARGIN_R, 0, MARGIN_R, dim.h, magenta);
@@ -106,7 +106,9 @@ gui_redraw(arena memory) {
 	int x = MARGIN_L;
 	int y = MARGIN_TOP;
 
-	cursor_state = (cursor_state + 1) % 60;
+	if(gui_is_active()) {
+		cursor_state = (cursor_state + 1) % 60;
+	}
 
 	for(int i = 0; i < num_display_lines; ++i) {
 		s8 *line = push_text(&cmdbuf, x, y, rgb(0, 0, 0));
@@ -214,7 +216,7 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 		selection[0] = set_cursor_pos(buffer_pos_at_xy(mouse_x, mouse_y));
 		selection[0] -= selection[0] == buffer_length(buffer);
 	} else if(event == mouse_drag) {
-		if(mouse_y < MARGIN_TOP) {
+		if(mouse_y < 5) {
 			display_scroll(-1);
 		} else if(gui_dimensions().h - MARGIN_BOT < mouse_y) {
 			display_scroll(1);
@@ -332,7 +334,7 @@ gui_keyboard(arena memory, gui_event event) {
 			isize whitespace = cursor_pos;
 
 			for(isize bol = buffer_bol(buffer, cursor_pos); whitespace > bol; --whitespace) {
-				int rune = buffer_get(buffer, whitespace - 1);
+				int rune = buffer_get(buffer, whitespace);
 
 				if(rune == ' ' || rune == '\t') {
 					break;
