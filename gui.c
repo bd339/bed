@@ -11,6 +11,7 @@
 
 #define DEFAULT_COLOR rgb(0, 0, 0)
 #define COMMENT_COLOR rgb(128, 128, 128)
+#define STRING_COLOR  rgb(255, 128, 128)
 
 /* DEFERRED RENDERING API BEGIN */
 
@@ -118,6 +119,7 @@ gui_redraw(arena memory) {
 	for(int i = 0; i < num_display_lines; ++i) {
 		s8 *line = push_text(&cmdbuf, x, y, text_color);
 		b32 cursor_on_line_i = 0;
+		b32 inside_string = 0;
 		int rune = -1;
 
 		for(isize j = display_lines[i]; j < display_lines[i+1]; ++j) {
@@ -177,7 +179,20 @@ gui_redraw(arena memory) {
 					text_color = DEFAULT_COLOR;
 					line = push_text(&cmdbuf, x + width, y, text_color);
 				}
-
+				/* check if we are on a string literal */
+				else if(rune == '"') {
+					if(inside_string) {
+						if(line->length < 2 || line->data[line->length - 2] != '\\') {
+							inside_string = 0;
+							line = push_text(&cmdbuf, x + width, y, text_color);
+						}
+					} else if(line->length < 2 || line->data[line->length - 2] != '\'') {
+						inside_string = 1;
+						line->length--;
+						line = push_text(&cmdbuf, x, y, STRING_COLOR);
+						s8_append(line, '"');
+					}
+				}
 			}
 
 			x += width;
