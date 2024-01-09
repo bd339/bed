@@ -35,7 +35,8 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 
 	switch(message) {
 		case WM_CHAR:
-			gui_keyboard(memory, kbd_char + (wParam & 0xFF));
+			b32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+			gui_keyboard(memory, kbd_char + (wParam & 0xFF), shift);
 			break;
 
 		case WM_KEYDOWN:
@@ -44,7 +45,8 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 				case VK_UP:
 				case VK_RIGHT:
 				case VK_DOWN:
-					gui_keyboard(memory, kbd_left + (wParam - VK_LEFT));
+					b32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+					gui_keyboard(memory, kbd_left + (wParam - VK_LEFT), shift);
 					break;
 			}
 			break;

@@ -266,7 +266,7 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 }
 
 void
-gui_keyboard(arena memory, gui_event event) {
+gui_keyboard(arena memory, gui_event event, int modifiers) {
 	if(event == kbd_left) {
 		set_cursor_pos(cursor_pos - (cursor_pos > 0));
 	} else if(event == kbd_right) {
@@ -314,6 +314,7 @@ gui_keyboard(arena memory, gui_event event) {
 		enum {
 			ctrl_c    = 0x03,
 			backspace = 0x08,
+			tab       = 0x09,
 			enter     = 0x0D,
 			ctrl_s    = 0x13,
 			ctrl_u    = 0x15,
@@ -380,6 +381,26 @@ gui_keyboard(arena memory, gui_event event) {
 
 			buffer_erase_runes(buffer, whitespace, cursor_pos);
 			set_cursor_pos(whitespace);
+		} else if(ch == tab && selection_valid) {
+			isize bol = -1;
+
+			for(isize i = selection_begin(); i <= selection_end(); ++i) {
+				isize bol_i = buffer_bol(buffer, i);
+
+				if(bol_i != bol && i != bol_i) {
+					bol = bol_i;
+
+					if(modifiers & 1) {
+						if(buffer_get(buffer, bol) == '\t') {
+							buffer_erase(buffer, bol);
+						}
+					} else {
+						buffer_insert(buffer, bol, '\t');
+					}
+				}
+			}
+
+			set_cursor_pos(bol);
 		} else {
 			erase_selection();
 

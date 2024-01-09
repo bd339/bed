@@ -35,7 +35,7 @@ void gui_set_text_color(color);
 void gui_redraw(arena);
 void gui_reflow(void);
 void gui_mouse(gui_event, int, int);
-void gui_keyboard(arena, gui_event);
+void gui_keyboard(arena, gui_event, int);
 b32  gui_exit(void);
 b32  gui_is_active(void);
 
