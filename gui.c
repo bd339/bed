@@ -382,25 +382,32 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			buffer_erase_runes(buffer, whitespace, cursor_pos);
 			set_cursor_pos(whitespace);
 		} else if(ch == tab && selection_valid) {
-			isize bol = -1;
+			b32 newline = 1;
+			isize begin = selection_begin();
+			isize end   = selection_end();
 
-			for(isize i = selection_begin(); i <= selection_end(); ++i) {
-				isize bol_i = buffer_bol(buffer, i);
+			for(isize i = begin; i <= end; ++i) {
+				int rune = buffer_get(buffer, i);
 
-				if(bol_i != bol && i != bol_i) {
-					bol = bol_i;
+				if(newline && rune != '\n') {
+					newline = 0;
 
 					if(modifiers & 1) {
-						if(buffer_get(buffer, bol) == '\t') {
-							buffer_erase(buffer, bol);
+						if(buffer_get(buffer, i) == '\t') {
+							buffer_erase(buffer, i);
+							end--;
 						}
 					} else {
-						buffer_insert(buffer, bol, '\t');
+						buffer_insert(buffer, i, '\t');
+						end++;
 					}
 				}
+
+				newline = rune == '\n';
 			}
 
-			set_cursor_pos(bol);
+			selection[0] = begin;
+			selection[1] = end;
 		} else {
 			erase_selection();
 
