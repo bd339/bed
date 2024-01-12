@@ -11,7 +11,7 @@
 
 #define DEFAULT_COLOR rgb(0, 0, 0)
 #define COMMENT_COLOR rgb(128, 128, 128)
-#define STRING_COLOR  rgb(255, 128, 128)
+#define STRING_COLOR  rgb(244, 187, 68)
 
 /* DEFERRED RENDERING API BEGIN */
 
@@ -51,6 +51,7 @@ static b32   selection_valid;
  */
 static isize selection[2];
 static b32   warn_unsaved_changes;
+static b32   reflow_needed;
 
 /* GUI STATE VARIABLES END */
 
@@ -74,6 +75,11 @@ static isize set_cursor_pos(isize);
 
 void
 gui_redraw(arena memory) {
+	if(reflow_needed) {
+		reflow_needed = 0;
+		gui_reflow();
+	}
+
 	arena cmdbuf   = push_begin(memory);
 	dimensions dim = gui_dimensions();
 	color magenta  = rgb(255, 0, 255);
@@ -163,7 +169,7 @@ gui_redraw(arena memory) {
 				line->length += 4;
 			} else {
 				/* check if we are on the start of a comment */
-				if(line->length && line->data[line->length - 1] == '/') {
+				if(!inside_string && line->length && line->data[line->length - 1] == '/') {
 					if(rune == '*' || rune == '/') {
 						line->length--;
 						text_color = rune == '*' ? COMMENT_COLOR : text_color;
@@ -175,7 +181,7 @@ gui_redraw(arena memory) {
 				s8_append(line, rune);
 
 				/* check if we are on the end of a block comment */
-				if(line->length >= 2 && line->data[line->length - 2] == '*' && rune == '/') {
+				if(!inside_string && line->length >= 2 && line->data[line->length - 2] == '*' && rune == '/') {
 					text_color = DEFAULT_COLOR;
 					line = push_text(&cmdbuf, x + width, y, text_color);
 				}
@@ -458,7 +464,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 		}
 	}
 
-	gui_reflow();
+	reflow_needed = 1;
 }
 
 b32
@@ -653,7 +659,7 @@ display_scroll(int num_lines) {
 		}
 	}
 
-	gui_reflow();
+	reflow_needed = 1;
 }
 
 static void
