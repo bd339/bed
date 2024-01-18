@@ -652,18 +652,6 @@ gui_exit(void) {
 	return 1;
 }
 
-/* GUI IMPLEMENTATION END */
-
-/* DISPLAY IMPLEMENTATION BEGIN */
-
-static point
-xy_at_buffer_pos(isize pos) {
-	assert(display_pos <= pos && pos < display_pos + display.length);
-	return display.data[pos - display_pos];
-}
-
-/* DISPLAY IMPLEMENTATION END */
-
 static void
 clip_rect(int *x, int *y, int *w, int *h) {
 	dimensions dim = gui_dimensions();
@@ -712,6 +700,58 @@ static void draw_cursor(int x, int y, int w) {
 	}
 }
 
+static int
+rune_width(int rune) {
+	return rune == '\t' ? 4 * gui_font_width(' ') : gui_font_width(rune);
+}
+
+/* GUI IMPLEMENTATION END */
+
+/* CURSOR IMPLEMENTATION BEGIN */
+
+static isize
+set_cursor_pos(isize pos) {
+	cursor_state = 0;
+	cursor_x = 0;
+	cursor_pos = pos;
+	selection_valid = 0;
+	return cursor_pos;
+}
+
+/* CURSOR IMPLEMENTATION END */
+
+/* SELECTION IMPLEMENTATION BEGIN */
+
+static isize
+selection_begin(void) {
+	assert(selection_valid);
+	return selection[0] < selection[1] ? selection[0] : selection[1];
+}
+
+static isize
+selection_end(void) {
+	assert(selection_valid);
+	return selection[0] < selection[1] ? selection[1] : selection[0];
+}
+
+static void
+erase_selection(void) {
+	if(selection_valid) {
+		buffer_erase_runes(buffer, selection_begin(), selection_end() + 1);
+		set_cursor_pos(selection_begin());
+	}
+}
+
+/* SELECTION IMPLEMENTATION END */
+
+/* DISPLAY IMPLEMENTATION BEGIN */
+
+static point
+xy_at_buffer_pos(isize pos) {
+	assert(display_pos <= pos && pos < display_pos + display.length);
+	return display.data[pos - display_pos];
+}
+
 static isize
 buffer_pos_at_xy(int x, int y) {
 	isize lo = 0;
@@ -750,18 +790,9 @@ display_scroll(int num_lines) {
 	gui_reflow();
 }
 
-static void
-erase_selection(void) {
-	if(selection_valid) {
-		buffer_erase_runes(buffer, selection_begin(), selection_end() + 1);
-		set_cursor_pos(selection_begin());
-	}
-}
+/* DISPLAY IMPLEMENTATION END */
 
-static int
-rune_width(int rune) {
-	return rune == '\t' ? 4 * gui_font_width(' ') : gui_font_width(rune);
-}
+/* TOKEN IMPLEMENTATION BEGIN */
 
 static int
 token_width(token *tok) {
@@ -788,23 +819,4 @@ token_width(token *tok) {
 	assert(0);
 }
 
-static isize
-selection_begin(void) {
-	assert(selection_valid);
-	return selection[0] < selection[1] ? selection[0] : selection[1];
-}
-
-static isize
-selection_end(void) {
-	assert(selection_valid);
-	return selection[0] < selection[1] ? selection[1] : selection[0];
-}
-
-static isize
-set_cursor_pos(isize pos) {
-	cursor_state = 0;
-	cursor_x = 0;
-	cursor_pos = pos;
-	selection_valid = 0;
-	return cursor_pos;
-}
+/* TOKEN IMPLEMENTATION END */
