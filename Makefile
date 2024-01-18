@@ -1,7 +1,7 @@
 .POSIX:
 .SUFFIXES:
 CC = gcc
-CFLAGS = -std=c11 -Wall -Wextra -Wno-unused-parameter -Wdouble-promotion -Wconversion -fsanitize=undefined -fsanitize-trap -g3
+CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wdouble-promotion -Wconversion -fsanitize=undefined -fsanitize-trap -g3
 LDLIBS = -lgdi32 -luser32
 
 windows: main_win32.o buffer.o gui.o util.o

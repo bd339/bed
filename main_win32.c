@@ -164,14 +164,14 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 
 	AddVectoredExceptionHandler(1, &access_violation_handler);
 
-	char file_path[MAX_PATH];
+	char file_path[MAX_PATH] = {0};
 	GetFullPathName(lpCmdline, MAX_PATH, file_path, 0);
 
 	extern buffer_t buffer;
 	buffer = buffer_new(&memory, file_path);
 
 	if(!buffer) {
-		return 4;
+		return 2;
 	}
 
 	WNDCLASS window_class      = {0};
@@ -182,7 +182,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 	window_class.lpszClassName = "BedWindowClass";
 
 	if(!RegisterClass(&window_class)) {
-		return 2;
+		return 3;
 	}
 
 	window = CreateWindow(
@@ -200,7 +200,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 	);
 
 	if(!window) {
-		return 3;
+		return 4;
 	}
 
 	ShowWindow(window, SW_MAXIMIZE);
