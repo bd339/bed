@@ -24,7 +24,7 @@ grow(void *slice, isize sz) {
 	memcpy(&header, slice, sizeof(header));
 
 	void *data = header.data;
-	header.capacity = header.capacity ? 2 * header.capacity : 100;
+	header.capacity = header.capacity ? 2 * header.capacity : 1000;
 	header.data = calloc((size_t)header.capacity, (size_t)sz);
 
 	if(data) {
@@ -113,7 +113,7 @@ typedef struct {
 } token;
 
 static struct {
-	token *data;
+	token* data;
 	isize  length;
 	isize  capacity;
 } tokens;
