@@ -15,7 +15,7 @@
 #define STRING_COLOR  rgb(244, 187, 68)
 
 static void
-grow(void *slice, isize sz) {
+grow(void *slice, isize sz, isize hint) {
 	struct {
 		void *data;
 		isize length;
@@ -28,20 +28,27 @@ grow(void *slice, isize sz) {
 	header.data = calloc((size_t)header.capacity, (size_t)sz);
 
 	if(data) {
-		memcpy(header.data, data, (size_t)(header.length * sz));
+		memcpy(header.data, data, (size_t)(hint * sz));
+		memcpy(header.data + hint + 1, data + hint + 1, (size_t)(header.length - hint));
 		free(data);
 	}
 
 	memcpy(slice, &header, sizeof(header));
 }
 
-#define push(s) ({                   \
-	typeof(s) _s = s;                \
-	if(_s->length >= _s->capacity) { \
-		grow(_s, sizeof(*_s->data)); \
-	}                                \
-	_s->data + _s->length++;         \
+#define insert(s, i) ({                                                                            \
+	typeof(s) _s = s;                                                                              \
+	typeof(i) _i = i;                                                                              \
+	if(_s->length >= _s->capacity) {                                                               \
+		grow(_s, sizeof(*_s->data), _i);                                                           \
+	} else {                                                                                       \
+		memcpy(_s->data + _i + 1, _s->data + _i, (size_t)(sizeof(*_s->data) * (_s->length - _i))); \
+	}                                                                                              \
+	_s->length++;                                                                                  \
+	_s->data + _i;                                                                                 \
 })
+
+#define push(s) insert(s, (s)->length)
 
 /* CURSOR API BEGIN */
 
@@ -118,19 +125,27 @@ static struct {
 	isize  capacity;
 } tokens;
 
-static int token_width(token*);
+static struct {
+	token* data;
+	isize  length;
+	isize  capacity;
+} comments;
+
+static isize comment_ub(token);
+static void  comment_insert(token);
+static int   token_width(token*); // TODO: get rid of this
 
 /* TOKEN API END */
 
 /* GUI IMPLEMENTATION BEGIN */
 
+buffer_t  buffer;
+unsigned* pixels;
+static b32 warn_unsaved_changes;
+
 static void draw_rect(int, int, int, int, color);
 static void draw_cursor(int, int, int);
 static int  rune_width(int);
-
-buffer_t  buffer;
-unsigned *pixels;
-static b32 warn_unsaved_changes;
 
 void
 gui_redraw(arena memory) {
@@ -189,10 +204,12 @@ gui_redraw(arena memory) {
 	}
 
 	{ // Draw tokens
-		gui_set_text_color(TEXT_COLOR);
 		int line_height = gui_font_height();
+		color text_color = TEXT_COLOR;
 
 		for(int i = 0; i < tokens.length; ++i) {
+			gui_set_text_color(text_color);
+
 			s8 token_str = {0};
 			token_str.data = arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
 
@@ -222,17 +239,31 @@ gui_redraw(arena memory) {
 					token_str.length += tokens.data[i].length;
 				break;
 
+#if 1
 				case token_comment_begin:
-					gui_set_text_color(COMMENT_COLOR);
 					/* fallthrough */
 				case token_comment_end:
 					/* fallthrough because we may only reset the text color AFTER the token has been drawn */
+#endif
 				case token_word:
 					// TODO: optimize by copying the entire token instead of rune by rune
 					for(isize j = tokens.data[i].start; j < tokens.data[i].start + tokens.data[i].length; ++j) {
 						s8_append(&token_str, buffer_get(buffer, j));
 					}
 				break;
+			}
+
+			/* color the token */
+			{
+				isize ub = comment_ub(tokens.data[i]);
+
+				if(0 <= ub-1 && comments.data[ub-1].type == token_comment_begin) {
+					if(text_color != COMMENT_COLOR) {
+						gui_set_text_color(text_color = COMMENT_COLOR);
+					}
+				} else {
+					text_color = TEXT_COLOR;
+				}
 			}
 
 			/* draw the token */
@@ -245,10 +276,6 @@ gui_redraw(arena memory) {
 			} else {
 				point xy = xy_at_buffer_pos(tokens.data[i].start);
 				gui_text(xy.x, xy.y, token_str);
-			}
-
-			if(tokens.data[i].type == token_comment_end) {
-				gui_set_text_color(TEXT_COLOR);
 			}
 		}
 	}
@@ -370,11 +397,17 @@ gui_reflow(void) {
 						if(next == '/' || next == '*') {
 							inside_line_comment  = next == '/';
 							inside_block_comment = next == '*';
-							*push(&tokens) = (token) {
-								.type   = token_comment_begin,
+							token tok = (token) {
+								.type = token_comment_begin,
 								.start  = i++,
 								.length = 2,
 							};
+
+							if(inside_block_comment) {
+								comment_insert(tok);
+							}
+
+							*push(&tokens) = tok;
 							break;
 						} else if(rune == '#') {
 							char next[4];
@@ -409,11 +442,13 @@ gui_reflow(void) {
 				case '*':
 					if(inside_block_comment && buffer_get(buffer, i+1) == '/') {
 						inside_block_comment = 0;
-						*push(&tokens) = (token) {
+						token tok = (token) {
 							.type   = token_comment_end,
 							.start  = i++,
 							.length = 2,
 						};
+						comment_insert(tok);
+						*push(&tokens) = tok;
 						break;
 					}
 					goto TOKEN_WORD;
@@ -793,6 +828,39 @@ display_scroll(int num_lines) {
 /* DISPLAY IMPLEMENTATION END */
 
 /* TOKEN IMPLEMENTATION BEGIN */
+
+/*
+ * Compute the upper bound of the given token.
+ * ub is the first index such that: comments.data[ub].start > tok.start
+ * If no such index exists, ub is comments.length
+ */
+static isize
+comment_ub(token tok) {
+	isize lo = 0;
+	isize hi = comments.length;
+
+	for(; lo < hi;) {
+		isize m = (lo + hi) >> 1;
+
+		if(comments.data[m].start <= tok.start) {
+			lo = m+1;
+		} else {
+			hi = m;
+		}
+	}
+
+	assert(lo-1 < 0 || comments.data[lo-1].start <= tok.start);
+	return lo;
+}
+
+static void
+comment_insert(token tok) {
+	isize insert_pos = comment_ub(tok);
+
+	if(insert_pos - 1 < 0 || comments.data[insert_pos - 1].start < tok.start) {
+		*insert(&comments, insert_pos) = tok;
+	}
+}
 
 static int
 token_width(token *tok) {
