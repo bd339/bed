@@ -5,51 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MARGIN_TOP   0
-#define MARGIN_BOT   gui_font_height()
-#define MARGIN_L     0
-#define MARGIN_R     5
-
-#define TEXT_COLOR    rgb(0, 0, 0)
-#define COMMENT_COLOR rgb(128, 128, 128)
-#define STRING_COLOR  rgb(244, 187, 68)
-
-static void
-grow(void *slice, isize sz, isize hint) {
-	struct {
-		void *data;
-		isize length;
-		isize capacity;
-	} header;
-	memcpy(&header, slice, sizeof(header));
-
-	void *data = header.data;
-	header.capacity = header.capacity ? 2 * header.capacity : 1000;
-	header.data = calloc((size_t)header.capacity, (size_t)sz);
-
-	if(data) {
-		memcpy(header.data, data, (size_t)(hint * sz));
-		memcpy(header.data + hint + 1, data + hint + 1, (size_t)(header.length - hint));
-		free(data);
-	}
-
-	memcpy(slice, &header, sizeof(header));
-}
-
-#define insert(s, i) ({                                                                            \
-	typeof(s) _s = s;                                                                              \
-	typeof(i) _i = i;                                                                              \
-	if(_s->length >= _s->capacity) {                                                               \
-		grow(_s, sizeof(*_s->data), _i);                                                           \
-	} else {                                                                                       \
-		memcpy(_s->data + _i + 1, _s->data + _i, (size_t)(sizeof(*_s->data) * (_s->length - _i))); \
-	}                                                                                              \
-	_s->length++;                                                                                  \
-	_s->data + _i;                                                                                 \
-})
-
-#define push(s) insert(s, (s)->length)
-
 /* CURSOR API BEGIN */
 
 /*
@@ -57,10 +12,8 @@ grow(void *slice, isize sz, isize hint) {
  * NOTE: ONLY UPDATE THIS WITH set_cursor_pos().
  */
 static isize cursor_pos;
-/* Target x of the cursor when moving between lines */
-static int   cursor_x;
-/* Implements blinking of the cursor */
-static int   cursor_state;
+static int   cursor_x;     // Target x of the cursor when moving between lines
+static int   cursor_state; // Implements blinking of the cursor
 
 static isize set_cursor_pos(isize);
 
@@ -82,6 +35,26 @@ static void  erase_selection(void);
 
 /* SELECTION API END */
 
+/* SLICE API BEGIN */
+
+static void grow(void*, isize, isize);
+
+#define insert(s, i) ({                                                                            \
+	typeof(s) _s = s;                                                                              \
+	typeof(i) _i = i;                                                                              \
+	if(_s->length >= _s->capacity) {                                                               \
+		grow(_s, sizeof(*_s->data), _i);                                                           \
+	} else {                                                                                       \
+		memcpy(_s->data + _i + 1, _s->data + _i, (size_t)(sizeof(*_s->data) * (_s->length - _i))); \
+	}                                                                                              \
+	_s->length++;                                                                                  \
+	_s->data + _i;                                                                                 \
+})
+
+#define push(s) insert(s, (s)->length)
+
+/* SLICE API END */
+
 /* DISPLAY API BEGIN */
 
 typedef struct {
@@ -89,14 +62,13 @@ typedef struct {
 	int y;
 } point;
 
-/* Dynamic array of x,y coords of every rune in the display */
 static struct {
 	point* data;
 	isize  length;
 	isize  capacity;
-} display;
-/* Buffer position of the first rune visible in the display */
-static isize display_pos;
+} display;                // Slice of x,y coords of every rune in the display
+static isize display_pos; // Buffer position of the first rune visible in the display
+
 
 static point xy_at_buffer_pos(isize);
 static isize buffer_pos_at_xy(int, int);
@@ -139,6 +111,15 @@ static int   token_width(token*); // TODO: get rid of this
 
 /* GUI IMPLEMENTATION BEGIN */
 
+#define MARGIN_TOP   0
+#define MARGIN_BOT   gui_font_height()
+#define MARGIN_L     0
+#define MARGIN_R     5
+
+#define TEXT_COLOR    rgb(0, 0, 0)
+#define COMMENT_COLOR rgb(128, 128, 128)
+#define STRING_COLOR  rgb(244, 187, 68)
+
 buffer_t  buffer;
 unsigned* pixels;
 static b32 warn_unsaved_changes;
@@ -149,10 +130,6 @@ static int  rune_width(int);
 
 void
 gui_redraw(arena memory) {
-	if(gui_is_active()) {
-		cursor_state = (cursor_state + 1) % 60;
-	}
-
 	dimensions dim = gui_dimensions();
 	color magenta  = rgb(255, 0, 255);
 
@@ -253,8 +230,7 @@ gui_redraw(arena memory) {
 				break;
 			}
 
-			/* color the token */
-			{
+			{ // Color the token
 				isize ub = comment_ub(tokens.data[i]);
 
 				if(0 <= ub-1 && comments.data[ub-1].type == token_comment_begin) {
@@ -281,6 +257,10 @@ gui_redraw(arena memory) {
 	}
 
 	{ // Draw cursor
+		if(gui_is_active()) {
+			cursor_state = (cursor_state + 1) % 60;
+		}
+
 		if(cursor_state < 15 || (cursor_state >= 30 && cursor_state < 45)) {
 			if(display_pos <= cursor_pos && cursor_pos < display_pos + display.length) {
 				point cursor_xy = xy_at_buffer_pos(cursor_pos);
@@ -742,6 +722,34 @@ rune_width(int rune) {
 
 /* GUI IMPLEMENTATION END */
 
+/* SLICE IMPLEMENTATION BEGIN */
+
+typedef struct {
+	void* data;
+	isize length;
+	isize capacity;
+} slice;
+
+static void
+grow(void *slize, isize sz, isize hint) {
+	slice header;
+	memcpy(&header, slize, sizeof(header));
+
+	void *data = header.data;
+	header.capacity = header.capacity ? 2 * header.capacity : 1000;
+	header.data = calloc((size_t)header.capacity, (size_t)sz);
+
+	if(data) {
+		memcpy(header.data, data, (size_t)(hint * sz));
+		memcpy(header.data + hint + 1, data + hint + 1, (size_t)(header.length - hint));
+		free(data);
+	}
+
+	memcpy(slize, &header, sizeof(header));
+}
+
+/* SLICE IMPLEMENTATION END */
+
 /* CURSOR IMPLEMENTATION BEGIN */
 
 static isize
@@ -849,7 +857,6 @@ comment_ub(token tok) {
 		}
 	}
 
-	assert(lo-1 < 0 || comments.data[lo-1].start <= tok.start);
 	return lo;
 }
 
