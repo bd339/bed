@@ -347,11 +347,13 @@ gui_reflow(void) {
 				case '\n':
 					if(inside_line_comment) {
 						inside_line_comment = 0;
-						*push(&tokens) = (token) {
+						token tok = (token) {
 							.type   = token_comment_end,
 							.start  = i,
 							.length = 0,
 						};
+						comment_insert(tok);
+						*push(&tokens) = tok;
 					}
 
 					if(i > 0 && buffer_get(buffer, i-1) == '\r') {
@@ -382,11 +384,7 @@ gui_reflow(void) {
 								.start  = i++,
 								.length = 2,
 							};
-
-							if(inside_block_comment) {
-								comment_insert(tok);
-							}
-
+							comment_insert(tok);
 							*push(&tokens) = tok;
 							break;
 						} else if(rune == '#') {
@@ -506,7 +504,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			display_scroll(-1);
 			target_y = MARGIN_TOP;
 		} else if(target_y >= gui_dimensions().h - MARGIN_BOT - line_height) {
-			display_scroll(1);
+			display_scroll(0); // TODO: this 0 is weird
 			target_y = cursor_xy.y;
 		}
 
@@ -559,7 +557,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			}
 		} else if(ch == ctrl_c || ch == ctrl_x) {
 			if(selection_valid) {
-				gui_clipboard_copy(buffer, selection_begin(), selection_end() + 1);
+				gui_clipboard_put(buffer, selection_begin(), selection_end() + 1);
 			}
 
 			if(ch == ctrl_x) {
@@ -697,7 +695,8 @@ draw_rect(int x, int y, int w, int h, color rgb) {
 	}
 }
 
-static void draw_cursor(int x, int y, int w) {
+static void
+draw_cursor(int x, int y, int w) {
 	int cursor_h   = gui_font_height();
 	dimensions dim = gui_dimensions();
 	clip_rect(&x, &y, &w, &cursor_h);

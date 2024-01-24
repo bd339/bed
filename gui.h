@@ -22,10 +22,10 @@ typedef enum {
 	mouse_scrollup,
 	mouse_scrolldown,
 	mouse_drag,
-	kbd_char,
+	kbd_char, // NOTE: MUST BE LAST
 } gui_event;
 
-void gui_clipboard_copy(buffer_t, isize, isize);
+void gui_clipboard_put(buffer_t, isize, isize);
 s8   gui_clipboard_get(void);
 int gui_font_width(int);
 int gui_font_height(void);

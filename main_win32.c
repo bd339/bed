@@ -220,7 +220,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 /* GUI IMPLEMENTATION BEGIN */
 
 void
-gui_clipboard_copy(buffer_t buffer, isize begin, isize end) {
+gui_clipboard_put(buffer_t buffer, isize begin, isize end) {
 	OpenClipboard(window);
 	EmptyClipboard();
 	HGLOBAL mem = GlobalAlloc(GHND, (SIZE_T)(end - begin + 1));
