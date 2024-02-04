@@ -8,8 +8,10 @@
 #define MEM_SIZE 1024 * 1024 * 1024 * 1024ull
 
 static arena memory;
-static HWND window;
-static HDC backbuffer;
+static HWND  window;
+static HDC   backbuffer;
+static HFONT font;
+static HFONT bold_font;
 
 LONG CALLBACK
 access_violation_handler(EXCEPTION_POINTERS *ExceptionInfo) {
@@ -32,11 +34,27 @@ LRESULT CALLBACK
 window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 	static int drag_x;
 	static int drag_y;
+	static b32 typing;
 
 	switch(message) {
 		case WM_CHAR:
+			BOOL hide_mouse;
+			SystemParametersInfo(SPI_GETMOUSEVANISH, 0, &hide_mouse, 0);
+
+			if(hide_mouse && !typing) {
+				ShowCursor(FALSE);
+				typing = 1;
+			}
+
 			b32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 			gui_keyboard(memory, kbd_char + (wParam & 0xFF), shift);
+			break;
+
+		case WM_SETCURSOR:
+			if(typing) {
+				ShowCursor(TRUE);
+				typing = 0;
+			}
 			break;
 
 		case WM_KEYDOWN:
@@ -125,7 +143,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			backbuffer = CreateCompatibleDC(0);
 			bitmap = CreateDIBSection(0, &bitmap_info, DIB_RGB_COLORS, &rgb, 0, 0);
 			SelectObject(backbuffer, bitmap);
-			SelectObject(backbuffer, GetStockObject(SYSTEM_FIXED_FONT));
+			SelectObject(backbuffer, font);
 			SetBkMode(backbuffer, TRANSPARENT);
 
 			if(rgb) {
@@ -135,6 +153,10 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			gui_reflow();
 			break;
 		}
+
+		case WM_CREATE:
+			SetCursor(LoadCursor(0, IDC_ARROW));
+			break;
 
 		case WM_CLOSE:
 			if(gui_exit()) {
@@ -178,7 +200,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 	window_class.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	window_class.lpfnWndProc   = window_proc;
 	window_class.hInstance     = hInstance;
-	window_class.hCursor       = LoadCursor(0, IDC_ARROW);
 	window_class.lpszClassName = "BedWindowClass";
 
 	if(!RegisterClass(&window_class)) {
@@ -202,6 +223,12 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 	if(!window) {
 		return 4;
 	}
+
+	font = GetStockObject(SYSTEM_FIXED_FONT);
+	LOGFONT lf;
+	GetObject(font, sizeof(LOGFONT), &lf);
+	lf.lfWeight = FW_BOLD;
+	bold_font = CreateFontIndirect(&lf);
 
 	ShowWindow(window, SW_MAXIMIZE);
 	SetTimer(window, 1, 1000 / 60, 0);
@@ -285,3 +312,5 @@ gui_set_text_color(color rgb) {
 b32 gui_is_active(void) {
 	return window == GetActiveWindow();
 }
+
+/* GUI IMPLEMENTATION END */
