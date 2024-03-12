@@ -159,6 +159,8 @@ gui_redraw(arena memory) {
 		};
 		highlight_t *next_highlight = highlights.data;
 
+		int line_height = gui_font_height();
+
 		for(isize i = display_pos; i < display_pos + display.length; ++i) {
 			if(next_highlight < highlights.data + highlights.length && next_highlight->at == i) {
 				highlight_t *highlight = next_highlight++;
@@ -166,74 +168,28 @@ gui_redraw(arena memory) {
 			}
 
 			int rune = buffer_get(buf, i);
+			point xy = xy_at_buffer_pos(i);
 
-			if(rune != -1 && rune != '\n') {
-				point xy = xy_at_buffer_pos(i);
+			draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, rgb(0, 255, 0));
+
+			if(rune == -1 || rune == '\n') {
+				draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, magenta);
+
+				for(isize j = i-1; j >= display_pos; --j) {
+					rune = buffer_get(buf, j);
+
+					if(rune == '\t' || rune == ' ' || rune == '\r') {
+						xy = xy_at_buffer_pos(j);
+						draw_rect(xy.x, xy.y, rune_width(rune), line_height, rgb(255, 0, 0));
+					} else {
+						break;
+					}
+				}
+			} else {
 				gui_text(xy.x, xy.y, rune == '\t' ? s8("    ") : (s8) { 1, (char*)&rune });
 			}
 		}
 	}
-
-#if 0
-	{ // Draw tokens
-		int line_height = gui_font_height();
-		color text_color = TEXT_COLOR;
-		int highlight_idx = 0;
-
-		for(int i = 0; i < tokens.length; ++i) {
-			gui_set_text_color(text_color);
-
-			s8 token_str = {0};
-			token_str.data = arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
-
-			color green = rgb(0, 255, 0);
-			draw_rect(dim.w - MARGIN_R, xy_at_buffer_pos(tokens.data[i].start).y, MARGIN_R, line_height, green);
-
-			switch(tokens.data[i].type) {
-				case token_eol: {
-					draw_rect(dim.w - MARGIN_R, xy_at_buffer_pos(tokens.data[i].start).y, MARGIN_R, line_height, magenta);
-
-					for(int j = i-1; j >= 0 && (tokens.data[j].type == token_space || tokens.data[j].type == token_tab); --j) {
-						for(isize k = tokens.data[j].start; k < tokens.data[j].start + tokens.data[j].length; ++k) {
-							point xy = xy_at_buffer_pos(k);
-							draw_rect(xy.x, xy.y, rune_width(buffer_get(buf, k)), line_height, rgb(255, 0, 0));
-						}
-					}
-				}
-				break;
-
-				case token_tab:
-					memset(token_str.data + token_str.length, ' ', 4 * (size_t)tokens.data[i].length);
-					token_str.length += 4 * tokens.data[i].length;
-				break;
-
-				case token_space:
-					memset(token_str.data + token_str.length, ' ', (size_t)tokens.data[i].length);
-					token_str.length += tokens.data[i].length;
-				break;
-
-				case token_word:
-					// TODO: optimize by copying the entire token instead of rune by rune
-					for(isize j = tokens.data[i].start; j < tokens.data[i].start + tokens.data[i].length; ++j) {
-						s8_append(&token_str, buffer_get(buf, j));
-					}
-				break;
-			}
-
-			/* draw the token */
-			if(xy_at_buffer_pos(tokens.data[i].start).x + token_width(&tokens.data[i]) > dim.w - MARGIN_R) {
-				for(isize j = tokens.data[i].start; j < tokens.data[i].start + tokens.data[i].length; ++j) {
-					char rune = (char)buffer_get(buf, j);
-					point xy = xy_at_buffer_pos(j);
-					gui_text(xy.x, xy.y, (s8) { 1, &rune });
-				}
-			} else {
-				point xy = xy_at_buffer_pos(tokens.data[i].start);
-				gui_text(xy.x, xy.y, token_str);
-			}
-		}
-	}
-#endif
 
 	{ // Draw cursor
 		if(gui_is_active()) {

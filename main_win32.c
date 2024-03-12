@@ -5,7 +5,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
-#include <stdio.h>
+//#include <stdio.h>
 
 #define MEM_SIZE 1024 * 1024 * 1024 * 1024ull
 
@@ -179,8 +179,10 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 
 int WINAPI
 WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdShow) {
+#if 0
 	AllocConsole();
 	freopen("CONOUT$", "w", stdout);
+#endif
 
 	memory.begin = VirtualAlloc(0, MEM_SIZE, MEM_RESERVE, PAGE_NOACCESS);
 	memory.end = memory.begin + MEM_SIZE;

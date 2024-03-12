@@ -13,7 +13,7 @@ buffer.o: buffer.c buffer.h util.h
 gui.o: gui.c gui.h buffer.h util.h syntax.h log.h
 util.o: util.c util.h
 syntax.o: syntax.c syntax.h buffer.h util.h
-log.o: log.c log.h buffer.h util.h
+log.o: log.c log.h util.h
 tree-sitter.o: tree-sitter/lib/src/lib.c
 	$(CC) -Itree-sitter/lib/src -Itree-sitter/lib/include -O3 -o $@ -c $<
 tree-sitter-c.o: tree-sitter-c/src/parser.c
