@@ -5,6 +5,8 @@
 #include <windows.h>
 #include <windowsx.h>
 
+#include <stdio.h>
+
 #define MEM_SIZE 1024 * 1024 * 1024 * 1024ull
 
 static arena memory;
@@ -177,6 +179,9 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 
 int WINAPI
 WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdShow) {
+	AllocConsole();
+	freopen("CONOUT$", "w", stdout);
+
 	memory.begin = VirtualAlloc(0, MEM_SIZE, MEM_RESERVE, PAGE_NOACCESS);
 	memory.end = memory.begin + MEM_SIZE;
 
@@ -189,10 +194,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 	char file_path[MAX_PATH] = {0};
 	GetFullPathName(lpCmdline, MAX_PATH, file_path, 0);
 
-	extern buffer_t buffer;
-	buffer = buffer_new(&memory, file_path);
-
-	if(!buffer) {
+	if(!gui_file_open(&memory, file_path)) {
 		return 2;
 	}
 
@@ -247,7 +249,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 /* GUI IMPLEMENTATION BEGIN */
 
 void
-gui_clipboard_put(buffer_t buffer, isize begin, isize end) {
+gui_clipboard_put(buffer *buffer, isize begin, isize end) {
 	OpenClipboard(window);
 	EmptyClipboard();
 	HGLOBAL mem = GlobalAlloc(GHND, (SIZE_T)(end - begin + 1));

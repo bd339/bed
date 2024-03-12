@@ -1,5 +1,6 @@
 #include "util.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 void*
@@ -23,4 +24,25 @@ void*
 arena_alignas(void *ptr, isize align) {
 	uintptr_t padding = -(uintptr_t)ptr & (uintptr_t)(align - 1);
 	return (char*)ptr + padding;
+}
+
+void
+slice_grow(void *slice, isize sz) {
+	struct {
+		void  *data;
+		isize  length;
+		isize  capacity;
+	} header;
+	memcpy(&header, slice, sizeof(header));
+
+	void *data = header.data;
+	header.capacity = header.capacity ? 2 * header.capacity : 1000;
+	header.data = calloc((size_t)header.capacity, (size_t)sz);
+
+	if(data) {
+		memcpy(header.data, data, (size_t)(header.length * sz));
+		free(data);
+	}
+
+	memcpy(slice, &header, sizeof(header));
 }

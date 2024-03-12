@@ -1,6 +1,8 @@
-#include "buffer.h"
 #include "gui.h"
+#include "log.h"
+#include "syntax.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,33 +37,6 @@ static void  erase_selection(void);
 
 /* SELECTION API END */
 
-/* SLICE API BEGIN */
-
-static void grow(void*, isize, isize);
-
-#define insert(s, i) ({                                                                            \
-	typeof(s) _s = s;                                                                              \
-	typeof(i) _i = i;                                                                              \
-	if(_s->length >= _s->capacity) {                                                               \
-		grow(_s, sizeof(*_s->data), _i);                                                           \
-	} else {                                                                                       \
-		memcpy(_s->data + _i + 1, _s->data + _i, (size_t)(sizeof(*_s->data) * (_s->length - _i))); \
-	}                                                                                              \
-	_s->length++;                                                                                  \
-	_s->data + _i;                                                                                 \
-})
-
-#define push(s) insert(s, (s)->length)
-
-#define erase(s, i) ({                                                                              \
-	typeof(s) _s = s;                                                                               \
-	typeof(i) _i = i;                                                                               \
-	memmove(_s->data + _i, _s->data + _i + 1, (size_t)(sizeof(*_s->data) * (_s->length - _i - 1))); \
-	_s->length--;                                                                                   \
-})
-
-/* SLICE API END */
-
 /* DISPLAY API BEGIN */
 
 typedef struct {
@@ -82,39 +57,6 @@ static void  display_scroll(int);
 
 /* DISPLAY API END */
 
-/* TOKEN API BEGIN */
-
-typedef struct {
-	enum {
-		token_space, // TODO: collapse this and tab into a whitespace token
-		token_tab,
-		token_eol,
-		token_word,
-		token_comment_begin,
-		token_comment_end,
-	} type;
-	isize start;
-	int   length;
-} token;
-
-static struct {
-	token* data;
-	isize  length;
-	isize  capacity;
-} tokens;
-
-static struct {
-	token* data;
-	isize  length;
-	isize  capacity;
-} comments;
-
-static isize comment_ub(token);
-static void  comment_insert(token);
-static int   token_width(token*); // TODO: get rid of this
-
-/* TOKEN API END */
-
 /* GUI IMPLEMENTATION BEGIN */
 
 #define MARGIN_TOP   0
@@ -122,21 +64,38 @@ static int   token_width(token*); // TODO: get rid of this
 #define MARGIN_L     0
 #define MARGIN_R     5
 
-#define TEXT_COLOR    rgb(0, 0, 0)
-#define COMMENT_COLOR rgb(128, 128, 128)
-#define STRING_COLOR  rgb(244, 187, 68)
-
-buffer_t  buffer;
-unsigned* pixels;
-static b32 warn_unsaved_changes;
+unsigned            *pixels;
+static buffer       *buf;
+static syntax_t     *syntax;
+static highlights_t  highlights;
+static log_t         undo;
+static log_t         redo;
+static b32           warn_unsaved_changes;
 
 static void draw_rect(int, int, int, int, color);
 static void draw_cursor(int, int, int);
 static int  rune_width(int);
 static void insert_rune(isize, int);
 static void insert_runes(isize, s8);
+static void insert_runes2(isize, s8, bool);
 static void erase_rune(isize);
 static void erase_runes(isize, isize);
+static void erase_runes2(isize, isize, bool);
+static b32  buffer_is_dirty(buffer*);
+
+b32
+gui_file_open(arena *memory, const char *file_path) {
+	if(!(buf = buffer_new(memory, file_path))) {
+		return 0;
+	}
+
+	if(!(syntax = syntax_new())) {
+		return 0;
+	}
+
+	syntax_insert(syntax, buf, 0, buffer_length(buf));
+	return 1;
+}
 
 void
 gui_redraw(arena memory) {
@@ -157,18 +116,18 @@ gui_redraw(arena memory) {
 
 		s8 buffer_label;
 		buffer_label.data   = arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
-		buffer_label.length = (isize)strlen(buffer_file_path(buffer));
-		memcpy(buffer_label.data, buffer_file_path(buffer), (size_t)buffer_label.length);
+		buffer_label.length = (isize)strlen(buffer_file_path(buf));
+		memcpy(buffer_label.data, buffer_file_path(buf), (size_t)buffer_label.length);
 
 		if(warn_unsaved_changes) {
 			const char warning[] = " has unsaved changes.";
 			memcpy(buffer_label.data + buffer_label.length, warning, lengthof(warning));
 			buffer_label.length += lengthof(warning);
-		} else if(buffer_is_dirty(buffer)) {
+		} else if(buffer_is_dirty(buf)) {
 			s8_append(&buffer_label, '*');
 		}
 
-		line_info li = buffer_line_info(buffer, cursor_pos);
+		line_info li = buffer_line_info(buf, cursor_pos);
 		s8 line_label;
 		line_label.data   = arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
 		line_label.length = sprintf(line_label.data, "%d,%d", li.line, li.col);
@@ -183,16 +142,43 @@ gui_redraw(arena memory) {
 			for(isize i = selection_begin(); i <= selection_end(); ++i) {
 				if(display_pos <= i && i < display_pos + display.length) {
 					point xy = xy_at_buffer_pos(i);
-					int width = rune_width(buffer_get(buffer, i));
+					int width = rune_width(buffer_get(buf, i));
 					draw_rect(xy.x, xy.y, width, gui_font_height(), rgb(208, 235, 255));
 				}
 			}
 		}
 	}
 
+	{ // Draw runes
+		gui_set_text_color(0);
+
+		static const color syntax_colors[syntax_end + 1] = {
+			[syntax_comment] = rgb(128, 128, 128),
+			[syntax_string]  = rgb(244, 187, 68),
+			[syntax_end]     = rgb(0, 0, 0),
+		};
+		highlight_t *next_highlight = highlights.data;
+
+		for(isize i = display_pos; i < display_pos + display.length; ++i) {
+			if(next_highlight < highlights.data + highlights.length && next_highlight->at == i) {
+				highlight_t *highlight = next_highlight++;
+				gui_set_text_color(syntax_colors[highlight->event]);
+			}
+
+			int rune = buffer_get(buf, i);
+
+			if(rune != -1 && rune != '\n') {
+				point xy = xy_at_buffer_pos(i);
+				gui_text(xy.x, xy.y, rune == '\t' ? s8("    ") : (s8) { 1, (char*)&rune });
+			}
+		}
+	}
+
+#if 0
 	{ // Draw tokens
 		int line_height = gui_font_height();
 		color text_color = TEXT_COLOR;
+		int highlight_idx = 0;
 
 		for(int i = 0; i < tokens.length; ++i) {
 			gui_set_text_color(text_color);
@@ -210,7 +196,7 @@ gui_redraw(arena memory) {
 					for(int j = i-1; j >= 0 && (tokens.data[j].type == token_space || tokens.data[j].type == token_tab); --j) {
 						for(isize k = tokens.data[j].start; k < tokens.data[j].start + tokens.data[j].length; ++k) {
 							point xy = xy_at_buffer_pos(k);
-							draw_rect(xy.x, xy.y, rune_width(buffer_get(buffer, k)), line_height, rgb(255, 0, 0));
+							draw_rect(xy.x, xy.y, rune_width(buffer_get(buf, k)), line_height, rgb(255, 0, 0));
 						}
 					}
 				}
@@ -226,36 +212,18 @@ gui_redraw(arena memory) {
 					token_str.length += tokens.data[i].length;
 				break;
 
-#if 1
-				case token_comment_begin:
-					/* fallthrough */
-				case token_comment_end:
-					/* fallthrough because we may only reset the text color AFTER the token has been drawn */
-#endif
 				case token_word:
 					// TODO: optimize by copying the entire token instead of rune by rune
 					for(isize j = tokens.data[i].start; j < tokens.data[i].start + tokens.data[i].length; ++j) {
-						s8_append(&token_str, buffer_get(buffer, j));
+						s8_append(&token_str, buffer_get(buf, j));
 					}
 				break;
-			}
-
-			{ // Color the token
-				isize ub = comment_ub(tokens.data[i]);
-
-				if(0 <= ub-1 && comments.data[ub-1].type == token_comment_begin) {
-					if(text_color != COMMENT_COLOR) {
-						gui_set_text_color(text_color = COMMENT_COLOR);
-					}
-				} else {
-					text_color = TEXT_COLOR;
-				}
 			}
 
 			/* draw the token */
 			if(xy_at_buffer_pos(tokens.data[i].start).x + token_width(&tokens.data[i]) > dim.w - MARGIN_R) {
 				for(isize j = tokens.data[i].start; j < tokens.data[i].start + tokens.data[i].length; ++j) {
-					char rune = (char)buffer_get(buffer, j);
+					char rune = (char)buffer_get(buf, j);
 					point xy = xy_at_buffer_pos(j);
 					gui_text(xy.x, xy.y, (s8) { 1, &rune });
 				}
@@ -265,6 +233,7 @@ gui_redraw(arena memory) {
 			}
 		}
 	}
+#endif
 
 	{ // Draw cursor
 		if(gui_is_active()) {
@@ -274,7 +243,7 @@ gui_redraw(arena memory) {
 		if(cursor_state < 15 || (cursor_state >= 30 && cursor_state < 45)) {
 			if(display_pos <= cursor_pos && cursor_pos < display_pos + display.length) {
 				point cursor_xy = xy_at_buffer_pos(cursor_pos);
-				int rune = buffer_get(buffer, cursor_pos);
+				int rune = buffer_get(buf, cursor_pos);
 				draw_cursor(cursor_xy.x, cursor_xy.y, rune != -1 ? rune_width(rune) : 8);
 			}
 		}
@@ -293,7 +262,7 @@ gui_reflow(void) {
 		int display_bot = dim.h - MARGIN_BOT - gui_font_height();
 
 		for(isize i = display_pos; y < display_bot; ++i) {
-			int rune = buffer_get(buffer, i);
+			int rune = buffer_get(buf, i);
 
 			if(rune == -1) {
 				*push(&display) = (point){ x, y };
@@ -318,144 +287,7 @@ gui_reflow(void) {
 		}
 	}
 
-	{ // Tokenize display
-		tokens.length = 0;
-
-		b32 inside_line_comment  = 0;
-		b32 inside_block_comment = 0;
-
-		for(isize i = display_pos; i < display_pos + display.length; ++i) {
-			int rune = buffer_get(buffer, i);
-			b32 inside_comment = inside_line_comment || inside_block_comment;
-
-			switch(rune) {
-				case ' ':
-					if(tokens.length && tokens.data[tokens.length-1].type == token_space) {
-						tokens.data[tokens.length-1].length++;
-					} else {
-						*push(&tokens) = (token) {
-							.type   = token_space,
-							.start  = i,
-							.length = 1,
-						};
-					}
-					break;
-
-				case '\t':
-					if(tokens.length && tokens.data[tokens.length-1].type == token_tab) {
-						tokens.data[tokens.length-1].length++;
-					} else {
-						*push(&tokens) = (token) {
-							.type   = token_tab,
-							.start  = i,
-							.length = 1,
-						};
-					}
-					break;
-
-				case -1:
-				case '\n':
-					if(inside_line_comment) {
-						inside_line_comment = 0;
-						token tok = (token) {
-							.type   = token_comment_end,
-							.start  = i,
-							.length = 0,
-						};
-						comment_insert(tok);
-						*push(&tokens) = tok;
-					}
-
-					if(i > 0 && buffer_get(buffer, i-1) == '\r') {
-						*push(&tokens) = (token) {
-							.type   = token_eol,
-							.start  = i-1,
-							.length = 2,
-						};
-					} else {
-						*push(&tokens) = (token) {
-							.type   = token_eol,
-							.start  = i,
-							.length = 1,
-						};
-					}
-					break;
-
-				case '/':
-				case '#':
-					if(!inside_comment) {
-						int next = buffer_get(buffer, i+1);
-
-						if(next == '/' || next == '*') {
-							inside_line_comment  = next == '/';
-							inside_block_comment = next == '*';
-							token tok = (token) {
-								.type = token_comment_begin,
-								.start  = i++,
-								.length = 2,
-							};
-							comment_insert(tok);
-							*push(&tokens) = tok;
-							break;
-						} else if(rune == '#') {
-							char next[4];
-							for(int j = 0; j < 4; ++j) next[j] = (char)buffer_get(buffer, i + 1 + j);
-							if(memcmp(next, "if 0", 4) == 0) {
-								inside_block_comment = 1;
-								*push(&tokens) = (token) {
-									.type   = token_comment_begin,
-									.start  = i,
-									.length = 5,
-								};
-								i += 4;
-								break;
-							}
-						}
-					} else if(inside_block_comment && rune == '#') {
-						char next[5];
-						for(int j = 0; j < 5; ++j) next[j] = (char)buffer_get(buffer, i + 1 + j);
-						if(memcmp(next, "endif", 5)  == 0) {
-							inside_block_comment = 0;
-							*push(&tokens) = (token) {
-								.type   = token_comment_end,
-								.start  = i,
-								.length = 6,
-							};
-							i += 5;
-							break;
-						}
-					}
-					goto TOKEN_WORD;
-
-				case '*':
-					if(inside_block_comment && buffer_get(buffer, i+1) == '/') {
-						inside_block_comment = 0;
-						token tok = (token) {
-							.type   = token_comment_end,
-							.start  = i++,
-							.length = 2,
-						};
-						comment_insert(tok);
-						*push(&tokens) = tok;
-						break;
-					}
-					goto TOKEN_WORD;
-
-				default:
-				TOKEN_WORD:
-					if(tokens.length && tokens.data[tokens.length-1].type == token_word) {
-						tokens.data[tokens.length-1].length++;
-					} else {
-						*push(&tokens) = (token) {
-							.type   = token_word,
-							.start  = i,
-							.length = 1,
-						};
-					}
-					break;
-			}
-		}
-	}
+	syntax_highlight(syntax, display_pos, display_pos + display.length, &highlights);
 }
 
 void
@@ -468,7 +300,7 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 
 		case mouse_left:
 			selection[0]  = set_cursor_pos(buffer_pos_at_xy(mouse_x, mouse_y));
-			selection[0] -= selection[0] == buffer_length(buffer);
+			selection[0] -= selection[0] == buffer_length(buf);
 			break;
 
 		case mouse_drag:
@@ -479,7 +311,7 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 			}
 
 			selection[1]  = buffer_pos_at_xy(mouse_x, mouse_y);
-			selection[1] -= selection[1] == buffer_length(buffer);
+			selection[1] -= selection[1] == buffer_length(buf);
 			set_cursor_pos(selection[1]);
 			selection_valid = 1;
 			break;
@@ -492,7 +324,7 @@ void
 gui_keyboard(arena memory, gui_event event, int modifiers) {
 	{ // Make sure cursor is visible
 		if(cursor_pos < display_pos) {
-			display_pos = buffer_bol(buffer, cursor_pos);
+			display_pos = buffer_bol(buf, cursor_pos);
 			gui_reflow();
 		} else {
 			while(display_pos + display.length <= cursor_pos) {
@@ -504,7 +336,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 	if(event == kbd_left) {
 		set_cursor_pos(cursor_pos - (cursor_pos > 0));
 	} else if(event == kbd_right) {
-		set_cursor_pos(cursor_pos + (cursor_pos < buffer_length(buffer)));
+		set_cursor_pos(cursor_pos + (cursor_pos < buffer_length(buf)));
 	} else if(event == kbd_down || event == kbd_up) {
 		point cursor_xy = xy_at_buffer_pos(cursor_pos);
 		int target_x = cursor_xy.x < cursor_x ? cursor_x : cursor_xy.x;
@@ -540,35 +372,54 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			if(selection_valid) {
 				erase_selection();
 			} else if(cursor_pos > 0) {
-				erase_rune(set_cursor_pos(cursor_pos - 1));
+				erase_rune(cursor_pos - 1);
 			}
 		} else if(ch == ctrl_u) {
 			if(selection_valid) {
 				erase_selection();
 			} else {
-				isize bol = buffer_bol(buffer, cursor_pos);
-				erase_runes(bol, cursor_pos);
-				set_cursor_pos(bol);
+				erase_runes(buffer_bol(buf, cursor_pos), cursor_pos);
 			}
 		} else if(ch == ctrl_s) {
-			if(!buffer_save(buffer)) {
+			if(!buffer_save(buf)) {
 				// TODO: handle error
 			}
 
 			warn_unsaved_changes = 0;
+			log_clear(&undo);
+			log_clear(&redo);
 		} else if(ch == ctrl_z || ch == ctrl_y) {
-			isize where = ch == ctrl_z ? buffer_undo(buffer) : buffer_redo(buffer);
+			log_t       *push = ch == ctrl_z ? &redo : &undo;
+			log_t       *pop  = ch == ctrl_z ? &undo : &redo;
+			log_entry_t *top = log_top(pop);
 
-			if(where != -1) {
-				set_cursor_pos(where);
+			if(top) {
+				switch(top->type) {
+					case entry_insert:
+						s8 erased = {0};
+						erased.data = malloc((size_t)top->length);
+						for(int i = 0; i < top->length; ++i) {
+							s8_append(&erased, buffer_get(buf, top->at + i));
+						}
+						log_push_erase(push, top->at, erased);
+						erase_runes2(top->at, top->at + top->length, false);
+						break;
+
+					case entry_erase:
+						log_push_insert(push, top->at, top->erased.length);
+						insert_runes2(top->at, top->erased, false);
+						break;
+				}
+
+				log_pop(pop);
 			}
 
-			if(!buffer_is_dirty(buffer)) {
+			if(!buffer_is_dirty(buf)) {
 				warn_unsaved_changes = 0;
 			}
 		} else if(ch == ctrl_c || ch == ctrl_x) {
 			if(selection_valid) {
-				gui_clipboard_put(buffer, selection_begin(), selection_end() + 1);
+				gui_clipboard_put(buf, selection_begin(), selection_end() + 1);
 			}
 
 			if(ch == ctrl_x) {
@@ -578,12 +429,11 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			s8 clipboard = gui_clipboard_get();
 			erase_selection();
 			insert_runes(cursor_pos, clipboard);
-			set_cursor_pos(cursor_pos + clipboard.length);
 		} else if(ch == ctrl_w) {
 			isize whitespace = cursor_pos;
 
-			for(isize bol = buffer_bol(buffer, cursor_pos); whitespace > bol; --whitespace) {
-				int rune = buffer_get(buffer, whitespace);
+			for(isize bol = buffer_bol(buf, cursor_pos); whitespace > bol; --whitespace) {
+				int rune = buffer_get(buf, whitespace);
 
 				if(rune == ' ' || rune == '\t') {
 					break;
@@ -591,20 +441,19 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			}
 
 			erase_runes(whitespace, cursor_pos);
-			set_cursor_pos(whitespace);
 		} else if(ch == tab && selection_valid) {
 			b32 newline = 1;
 			isize begin = selection_begin();
 			isize end   = selection_end();
 
 			for(isize i = begin; i <= end; ++i) {
-				int rune = buffer_get(buffer, i);
+				int rune = buffer_get(buf, i);
 
 				if(newline && rune != '\n') {
 					newline = 0;
 
 					if(modifiers & 1) {
-						if(buffer_get(buffer, i) == '\t') {
+						if(rune == '\t') {
 							erase_rune(i);
 							end--;
 						}
@@ -619,6 +468,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 
 			selection[0] = begin;
 			selection[1] = end;
+			selection_valid = 1;
 		} else {
 			erase_selection();
 
@@ -627,11 +477,11 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 				indent.data = arena_alloc(&memory, 1, 1, 80, 0);
 				s8_append(&indent, '\n');
 
-				isize bol = buffer_bol(buffer, cursor_pos);
-				isize eol = buffer_eol(buffer, cursor_pos);
+				isize bol = buffer_bol(buf, cursor_pos);
+				isize eol = buffer_eol(buf, cursor_pos);
 
 				for(isize i = bol; i < eol; ++i) {
-					int rune = buffer_get(buffer, i);
+					int rune = buffer_get(buf, i);
 
 					if(rune != ' ' && rune != '\t') {
 						break;
@@ -643,7 +493,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 				isize whitespace = cursor_pos;
 
 				for(; whitespace > bol; --whitespace) {
-					int rune = buffer_get(buffer, whitespace - 1);
+					int rune = buffer_get(buf, whitespace - 1);
 
 					if(rune != ' ' && rune != '\t') {
 						break;
@@ -651,12 +501,9 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 				}
 
 				erase_runes(whitespace, cursor_pos);
-				set_cursor_pos(whitespace);
 				insert_runes(cursor_pos, indent);
-				set_cursor_pos(cursor_pos + indent.length);
 			} else {
 				insert_rune(cursor_pos, ch);
-				set_cursor_pos(cursor_pos + 1);
 			}
 		}
 
@@ -666,7 +513,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 
 b32
 gui_exit(void) {
-	if(buffer_is_dirty(buffer)) {
+	if(buffer_is_dirty(buf)) {
 		if(!warn_unsaved_changes) {
 			warn_unsaved_changes = 1;
 			return 0;
@@ -732,79 +579,59 @@ rune_width(int rune) {
 
 static void
 insert_rune(isize at, int rune) {
-	insert_runes(at, (s8) { 1, (char*)&rune });
+	insert_runes2(at, (s8) { 1, (char*)&rune }, true);
 }
 
 static void
 insert_runes(isize at, s8 runes) {
-	isize ub = comment_ub((token) { .start = at });
-	ub -= 0 <= ub-1 && comments.data[ub-1].start == at;
+	insert_runes2(at, runes, true);
+}
 
-	for(isize i = ub; i < comments.length; ++i) {
-		comments.data[i].start += runes.length;
+static void
+insert_runes2(isize at, s8 runes, bool edit) {
+	if(edit) {
+		log_push_insert(&undo, at, runes.length);
+		log_clear(&redo);
 	}
 
-	// TODO: if runes is a comment, maybe we need to insert into comments
-	// TODO: this is insufficient because of undo/redo.
-	buffer_insert_runes(buffer, at, runes);
+	buffer_insert_runes(buf, at, runes);
+	syntax_insert(syntax, buf, at, at + runes.length);
+	set_cursor_pos(at + runes.length);
 }
 
 static void
 erase_rune(isize at) {
-	erase_runes(at, at + 1);
+	erase_runes2(at, at + 1, true);
 }
 
 static void
 erase_runes(isize begin, isize end) {
-	isize ub = comment_ub((token) { .start = begin });
+	erase_runes2(begin, end, true);
+}
 
-	for(isize i = ub; i < comments.length; ++i) {
-		comments.data[i].start -= end - begin;
-	}
-
-	if(0 <= ub-1) {
-		isize start  = comments.data[ub-1].start;
-		int   length = comments.data[ub-1].length;
-
-		for(isize i = start; i < start + length; ++i) {
-			if(begin <= i && i < end) {
-				erase(&comments, ub-1);
-				break;
-			}
+static void
+erase_runes2(isize begin, isize end, bool edit) {
+	if(edit) {
+		s8 erased = {0};
+		erased.data = malloc((size_t)(end - begin));
+		for(isize i = begin; i < end; ++i) {
+			s8_append(&erased, buffer_get(buf, i));
 		}
+		log_push_erase(&undo, begin, erased);
+		log_clear(&redo);
 	}
 
-	// TODO: this is insufficient because of undo/redo.
-	buffer_erase_runes(buffer, begin, end);
+	buffer_erase_runes(buf, begin, end);
+	syntax_erase(syntax, buf, begin, end);
+	set_cursor_pos(begin);
+}
+
+static b32
+buffer_is_dirty(buffer *buf) {
+	return undo.length != 0;
 }
 
 /* GUI IMPLEMENTATION END */
-
-/* SLICE IMPLEMENTATION BEGIN */
-
-static void
-grow(void *slize, isize sz, isize hint) {
-	struct {
-		void* data;
-		isize length;
-		isize capacity;
-	} header;
-	memcpy(&header, slize, sizeof(header));
-
-	void *data = header.data;
-	header.capacity = header.capacity ? 2 * header.capacity : 1000;
-	header.data = calloc((size_t)header.capacity, (size_t)sz);
-
-	if(data) {
-		memcpy(header.data, data, (size_t)(hint * sz));
-		memcpy(header.data + hint + 1, data + hint + 1, (size_t)(header.length - hint));
-		free(data);
-	}
-
-	memcpy(slize, &header, sizeof(header));
-}
-
-/* SLICE IMPLEMENTATION END */
 
 /* CURSOR IMPLEMENTATION BEGIN */
 
@@ -837,7 +664,6 @@ static void
 erase_selection(void) {
 	if(selection_valid) {
 		erase_runes(selection_begin(), selection_end() + 1);
-		set_cursor_pos(selection_begin());
 	}
 }
 
@@ -881,7 +707,7 @@ display_scroll(int num_lines) {
 		display_pos = buffer_pos_at_xy(display.data[0].x, display.data[0].y + (num_lines + 1) * gui_font_height());
 	} else {
 		while(display_pos > 0 && num_lines) {
-			display_pos = buffer_bol(buffer, display_pos - 1);
+			display_pos = buffer_bol(buf, display_pos - 1);
 			num_lines++;
 		}
 	}
@@ -890,64 +716,3 @@ display_scroll(int num_lines) {
 }
 
 /* DISPLAY IMPLEMENTATION END */
-
-/* TOKEN IMPLEMENTATION BEGIN */
-
-/*
- * Compute the upper bound of the given token.
- * ub is the first index such that: comments.data[ub].start > tok.start
- * If no such index exists, ub is comments.length
- */
-static isize
-comment_ub(token tok) {
-	isize lo = 0;
-	isize hi = comments.length;
-
-	for(; lo < hi;) {
-		isize m = (lo + hi) >> 1;
-
-		if(comments.data[m].start <= tok.start) {
-			lo = m+1;
-		} else {
-			hi = m;
-		}
-	}
-
-	return lo;
-}
-
-static void
-comment_insert(token tok) {
-	isize insert_pos = comment_ub(tok);
-
-	if(insert_pos - 1 < 0 || comments.data[insert_pos - 1].start < tok.start) {
-		*insert(&comments, insert_pos) = tok;
-	}
-}
-
-static int
-token_width(token *tok) {
-	switch(tok->type) {
-		case token_space: return tok->length * rune_width(' ');
-		case token_tab:   return tok->length * rune_width(' ') * 4;
-
-		case token_comment_begin:
-		case token_comment_end:
-		case token_word: {
-			int width = 0;
-
-			for(isize i = tok->start; i < tok->start + tok->length; ++i) {
-				width += rune_width(buffer_get(buffer, i));
-			}
-
-			return width;
-		}
-
-		case token_eol:
-			return 0;
-	}
-
-	assert(0);
-}
-
-/* TOKEN IMPLEMENTATION END */

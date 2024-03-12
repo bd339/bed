@@ -10,8 +10,6 @@
 #define alignof(x)  _Alignof(x)
 
 typedef ptrdiff_t isize;
-typedef uint8_t   u8;
-typedef uint16_t  u16;
 typedef int32_t   b32;
 
 typedef struct {
@@ -40,5 +38,15 @@ void *arena_alignas(void*, isize);
 #else
 #define assert(c) if(!(c)) __builtin_trap()
 #endif
+
+void slice_grow(void*, isize);
+
+#define push(s) ({                                                                                 \
+	typeof(s) _s = s;                                                                              \
+	if(_s->length >= _s->capacity) {                                                               \
+		slice_grow(_s, sizeof(*_s->data));                                                         \
+	}                                                                                              \
+	_s->data + _s->length++;                                                                       \
+})
 
 #endif // BED_UTIL_H

@@ -4,63 +4,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* LOG API BEGIN */
-
-typedef struct buffer buffer;
-
-typedef struct {
-	enum {
-		entry_insert,
-		entry_erase,
-	} type;
-	isize at;
-	union {
-		isize length;
-		s8 erased;
-	};
-} log_entry;
-
-/* A log is a stack of editing operations represented by a ring buffer. */
-typedef struct {
-	log_entry stack[1000];
-	int top;
-	int length;
-} log;
-
-static void       log_push_insert(log*, isize, isize);
-static void       log_push_erase(log*, buffer*, isize, isize);
-static log_entry* log_top(log*);
-static void       log_pop(log*);
-static void       log_clear(log*);
-static isize      log_undo(log*, log*, buffer*);
-
-/* LOG API END */
-
 /* BUFFER IMPLEMENTATION BEGIN */
 
 struct buffer {
-	isize length;
-	u16 generation;
-	log undo;
-	log redo;
-	char *file_path;
-	char runes[];
+	isize  length;
+	char  *file_path;
+	char   runes[1 << 30];
 };
 
-static buffer_t buffers[1];
+static buffer *buffers[1];
 
-static buffer *handle_lookup(buffer_t);
-static void insert_runes(buffer*, isize, s8);
-static void erase_runes(buffer*, isize, isize);
-
-buffer_t
+buffer*
 buffer_new(arena *arena, const char *file_path) {
 	buffer *buf = 0;
 	FILE *file = 0;
 
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(!buffers[i]) {
-			buf = arena_alloc(arena, sizeof(buffer) + (1 << 30), 1 << 16, 1, ALLOC_NOZERO);
+			buf = arena_alloc(arena, sizeof(buffer), 1 << 16, 1, ALLOC_NOZERO);
 			buf->length = 0;
 			buf->file_path = strdup(file_path);
 
@@ -76,7 +37,7 @@ buffer_new(arena *arena, const char *file_path) {
 			}
 
 			fclose(file);
-			return buffers[i] = (buffer_t)buf | buf->generation;
+			return buffers[i] = buf;
 		}
 	}
 
@@ -87,13 +48,9 @@ FAIL:
 }
 
 void
-buffer_free(buffer_t handle) {
+buffer_free(buffer *buf) {
 	for(int i = 0; i < countof(buffers); ++i) {
-		if(buffers[i] == handle) {
-			buffer *buf = handle_lookup(handle);
-			buf->generation++;
-			log_clear(&buf->undo);
-			log_clear(&buf->redo);
+		if(buffers[i] == buf) {
 			free(buf->file_path);
 			buffers[i] = 0;
 			return;
@@ -104,45 +61,26 @@ buffer_free(buffer_t handle) {
 }
 
 void
-buffer_insert(buffer_t handle, isize at, int rune) {
-	buffer *buf = handle_lookup(handle);
-	s8 runes = {1, (char*)&rune};
-	log_push_insert(&buf->undo, at, 1);
-	log_clear(&buf->redo);
-	insert_runes(buf, at, runes);
-}
-
-void
-buffer_insert_runes(buffer_t handle, isize at, s8 str) {
-	if(str.length) {
-		buffer *buf = handle_lookup(handle);
-		log_push_insert(&buf->undo, at, str.length);
-		log_clear(&buf->redo);
-		insert_runes(buf, at, str);
+buffer_insert_runes(buffer *buf, isize at, s8 runes) {
+	if(runes.length) {
+		assert(at <= buf->length);
+		memmove(buf->runes + at + runes.length, buf->runes + at, (size_t)(buf->length - at));
+		memcpy(buf->runes + at, runes.data, (size_t)runes.length);
+		buf->length += runes.length;
 	}
 }
 
 void
-buffer_erase(buffer_t handle, isize at) {
-	buffer *buf = handle_lookup(handle);
-	log_push_erase(&buf->undo, buf, at, 1);
-	log_clear(&buf->redo);
-	erase_runes(buf, at, at + 1);
-}
-
-void
-buffer_erase_runes(buffer_t handle, isize begin, isize end) {
+buffer_erase_runes(buffer *buf, isize begin, isize end) {
 	if(begin < end) {
-		buffer *buf = handle_lookup(handle);
-		log_push_erase(&buf->undo, buf, begin, end - begin);
-		log_clear(&buf->redo);
-		erase_runes(buf, begin, end);
+		assert(end <= buf->length);
+		memmove(buf->runes + begin, buf->runes + end, (size_t)(buf->length - end));
+		buf->length -= end - begin;
 	}
 }
 
 isize
-buffer_bol(buffer_t handle, isize pos) {
-	buffer *buf = handle_lookup(handle);
+buffer_bol(buffer *buf, isize pos) {
 	isize i;
 
 	for(i = pos - 1; i >= 0; --i) {
@@ -155,9 +93,7 @@ buffer_bol(buffer_t handle, isize pos) {
 }
 
 isize
-buffer_eol(buffer_t handle, isize pos) {
-	buffer *buf = handle_lookup(handle);
-
+buffer_eol(buffer *buf, isize pos) {
 	for(isize i = pos; i < buf->length; ++i) {
 		if(buf->runes[i] == '\n') {
 			return i;
@@ -168,20 +104,17 @@ buffer_eol(buffer_t handle, isize pos) {
 }
 
 isize
-buffer_length(buffer_t handle) {
-	buffer *buf = handle_lookup(handle);
+buffer_length(buffer *buf) {
 	return buf->length;
 }
 
 int
-buffer_get(buffer_t handle, isize pos) {
-	buffer *buf = handle_lookup(handle);
+buffer_get(buffer *buf, isize pos) {
 	return pos < buf->length ? buf->runes[pos] & 0xFF : -1;
 }
 
 int
-buffer_save(buffer_t handle) {
-	buffer *buf = handle_lookup(handle);
+buffer_save(buffer *buf) {
 	FILE *file = fopen(buf->file_path, "wb");
 
 	if(!file) {
@@ -195,34 +128,17 @@ buffer_save(buffer_t handle) {
 		return 0;
 	}
 
-	log_clear(&buf->undo);
-	log_clear(&buf->redo);
-
 	fclose(file);
 	return 1;
 }
 
-isize
-buffer_undo(buffer_t handle) {
-	buffer *buf = handle_lookup(handle);
-	return log_undo(&buf->undo, &buf->redo, buf);
-}
-
-isize
-buffer_redo(buffer_t handle) {
-	buffer *buf = handle_lookup(handle);
-	return log_undo(&buf->redo, &buf->undo, buf);
-}
-
 const char*
-buffer_file_path(buffer_t handle) {
-	buffer *buf = handle_lookup(handle);
+buffer_file_path(buffer *buf) {
 	return buf->file_path;
 }
 
 line_info
-buffer_line_info(buffer_t handle, isize at) {
-	buffer *buf = handle_lookup(handle);
+buffer_line_info(buffer *buf, isize at) {
 	line_info li = {0};
 
 	for(isize i = 0; i < at; ++i) {
@@ -236,138 +152,10 @@ buffer_line_info(buffer_t handle, isize at) {
 	return li;
 }
 
-b32
-buffer_is_dirty(buffer_t handle) {
-	buffer *buf = handle_lookup(handle);
-	return buf->undo.length != 0;
-}
-
-static buffer*
-handle_lookup(buffer_t handle) {
-	buffer *buf = (buffer*)(handle & 0xFFFFFFFFFFFF0000);
-	assert(buf->generation == (handle & 0xFFFF));
-	return buf;
-}
-
-static void
-insert_runes(buffer *buf, isize at, s8 runes) {
-	assert(at <= buf->length);
-	memmove(buf->runes + at + runes.length, buf->runes + at, (size_t)(buf->length - at));
-	memcpy(buf->runes + at, runes.data, (size_t)runes.length);
-	buf->length += runes.length;
-}
-
-static void
-erase_runes(buffer *buf, isize begin, isize end) {
-	assert(begin < end);
-	assert(end <= buf->length);
-	memmove(buf->runes + begin, buf->runes + end, (size_t)(buf->length - end));
-	buf->length -= end - begin;
+const char*
+buffer_read(buffer *buf, uint32_t byte_index, uint32_t *bytes_read) {
+	*bytes_read = (uint32_t)buf->length - byte_index;
+	return buf->runes + byte_index;
 }
 
 /* BUFFER IMPLEMENTATION END */
-
-/* LOG IMPLEMENTATION BEGIN */
-
-static void
-log_push_insert(log *log, isize at, isize length) {
-	log_entry *top = log_top(log);
-
-	if(top && top->type == entry_insert && top->at + top->length == at) {
-		top->length += length;
-	} else {
-		top = log->stack + log->top;
-		top->type = entry_insert;
-		top->at = at;
-		top->length = length;
-		log->top = (log->top + 1) % countof(log->stack);
-		log->length += log->length < countof(log->stack);
-	}
-}
-
-static void
-log_push_erase(log *log, buffer *buf, isize at, isize length) {
-	log_entry *top = log->stack + log->top;
-	top->type = entry_erase;
-	top->at = at;
-	top->erased.data = malloc((size_t)length);
-	top->erased.length = length;
-	assert(top->erased.data);
-	memcpy(top->erased.data, buf->runes + at, (size_t)length);
-	log->top = (log->top + 1) % countof(log->stack);
-	log->length += log->length < countof(log->stack);
-}
-
-static log_entry*
-log_top(log *log) {
-	if(log->length) {
-		return log->stack + (log->top - 1 + countof(log->stack)) % countof(log->stack);
-	}
-
-	return 0;
-}
-
-static void
-log_pop(log *log) {
-	assert(log->length);
-	log->top = (log->top - 1 + (int)countof(log->stack)) % (int)countof(log->stack);
-	log->length--;
-	log_entry *top = log->stack + log->top;
-
-	if(top->type == entry_erase) {
-		free(top->erased.data);
-	}
-}
-
-static void
-log_clear(log *log) {
-	while(log->length) {
-		log_pop(log);
-	}
-}
-
-static isize
-log_undo(log *undo, log *redo, buffer *buf) {
-	isize where = -1;
-	log_entry *top = log_top(undo);
-
-	if(top) {
-		switch(top->type) {
-			case entry_insert:
-				log_push_erase(redo, buf, top->at, top->length);
-				erase_runes(buf, top->at, top->at + top->length);
-				where = top->at;
-				break;
-
-			case entry_erase:
-				log_push_insert(redo, top->at, top->erased.length);
-				insert_runes(buf, top->at, top->erased);
-				where = top->at + top->erased.length;
-				break;
-		}
-
-		log_pop(undo);
-	}
-
-	return where;
-}
-
-/* LOG IMPLEMENTATION END */
-
-#ifdef TEST
-
-#include <stdlib.h>
-
-#define CLOVE_SUITE_NAME buffer_log
-#include "clove-unit.h"
-
-#ifdef _WIN32
-#define aligned_alloc(alignment, size) _aligned_malloc(size, alignment)
-#endif // _WIN32
-
-CLOVE_TEST(undo_empty_nop) {
-	buffer *buf = aligned_alloc(1 << 16, sizeof(*buf) + 100);
-	CLOVE_IS_TRUE(buf);
-}
-
-#endif // TEST
