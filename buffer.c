@@ -1,49 +1,28 @@
 #include "buffer.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 /* BUFFER IMPLEMENTATION BEGIN */
 
 struct buffer {
 	isize  length;
-	char  *file_path;
 	char   runes[1 << 30];
 };
 
 static buffer *buffers[1];
 
 buffer*
-buffer_new(arena *arena, const char *file_path) {
-	buffer *buf = 0;
-	FILE *file = 0;
+buffer_new(arena *arena) {
+	buffer *buf  = 0;
 
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(!buffers[i]) {
 			buf = arena_alloc(arena, sizeof(buffer), 1 << 16, 1, ALLOC_NOZERO);
 			buf->length = 0;
-			buf->file_path = strdup(file_path);
-
-			file = fopen(file_path, "rb");
-			if(!file) goto FAIL;
-			static char iobuf[8 * 1024];
-
-			while(!feof(file)) {
-				size_t read = fread(iobuf, 1, countof(iobuf), file);
-				if(read < countof(iobuf) && ferror(file)) goto FAIL;
-				memcpy(buf->runes + buf->length, iobuf, read);
-				buf->length += (isize)read;
-			}
-
-			fclose(file);
 			return buffers[i] = buf;
 		}
 	}
 
-FAIL:
-	if(buf)  free(buf->file_path);
-	if(file) fclose(file);
 	return 0;
 }
 
@@ -51,7 +30,6 @@ void
 buffer_free(buffer *buf) {
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(buffers[i] == buf) {
-			free(buf->file_path);
 			buffers[i] = 0;
 			return;
 		}
@@ -71,7 +49,7 @@ buffer_insert_runes(buffer *buf, isize at, s8 runes) {
 }
 
 void
-buffer_erase_runes(buffer *buf, isize begin, isize end) {
+buffer_delete_runes(buffer *buf, isize begin, isize end) {
 	if(begin < end) {
 		assert(end <= buf->length);
 		memmove(buf->runes + begin, buf->runes + end, (size_t)(buf->length - end));
@@ -111,30 +89,6 @@ buffer_length(buffer *buf) {
 int
 buffer_get(buffer *buf, isize pos) {
 	return pos < buf->length ? buf->runes[pos] & 0xFF : -1;
-}
-
-int
-buffer_save(buffer *buf) {
-	FILE *file = fopen(buf->file_path, "wb");
-
-	if(!file) {
-		// TODO: propagate error information
-		return 0;
-	}
-
-	if(fwrite(buf->runes, 1, (size_t)buf->length, file) < (size_t)buf->length) {
-		// TODO: propagate error information
-		fclose(file);
-		return 0;
-	}
-
-	fclose(file);
-	return 1;
-}
-
-const char*
-buffer_file_path(buffer *buf) {
-	return buf->file_path;
 }
 
 line_info

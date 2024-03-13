@@ -66,6 +66,7 @@ static void  display_scroll(int);
 
 unsigned            *pixels;
 static buffer       *buf;
+static const char   *buf_file_path;
 static syntax_t     *syntax;
 static highlights_t  highlights;
 static log_t         undo;
@@ -78,23 +79,51 @@ static int  rune_width(int);
 static void insert_rune(isize, int);
 static void insert_runes(isize, s8);
 static void insert_runes2(isize, s8, bool);
-static void erase_rune(isize);
-static void erase_runes(isize, isize);
-static void erase_runes2(isize, isize, bool);
+static void delete_rune(isize);
+static void delete_runes(isize, isize);
+static void delete_runes2(isize, isize, bool);
 static b32  buffer_is_dirty(buffer*);
 
 b32
 gui_file_open(arena *memory, const char *file_path) {
-	if(!(buf = buffer_new(memory, file_path))) {
+	if(!(buf = buffer_new(memory))) {
 		return 0;
+	}
+
+	FILE *file = fopen(file_path, "rb");
+
+	if(!file) {
+		// TODO: handle error
+		goto FAIL;
+	}
+
+	arena tmp = *memory;
+	s8 iobuf = { .length = 8 * 1024 };
+	iobuf.data = arena_alloc(&tmp, 1, 1, iobuf.length, 0);
+
+	while(!feof(file)) {
+		iobuf.length = (isize)fread(iobuf.data, 1, (size_t)iobuf.length, file);
+
+		if(ferror(file)) {
+			// TODO: handle error
+			goto FAIL;
+		}
+
+		buffer_insert_runes(buf, buffer_length(buf), iobuf);
 	}
 
 	if(!(syntax = syntax_new())) {
-		return 0;
+		goto FAIL;
 	}
 
+	buf_file_path = strdup(file_path);
 	syntax_insert(syntax, buf, 0, buffer_length(buf));
+	fclose(file);
 	return 1;
+
+FAIL:
+	if(file) fclose(file);
+	return 0;
 }
 
 void
@@ -116,8 +145,8 @@ gui_redraw(arena memory) {
 
 		s8 buffer_label;
 		buffer_label.data   = arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
-		buffer_label.length = (isize)strlen(buffer_file_path(buf));
-		memcpy(buffer_label.data, buffer_file_path(buf), (size_t)buffer_label.length);
+		buffer_label.length = (isize)strlen(buf_file_path);
+		memcpy(buffer_label.data, buf_file_path, (size_t)buffer_label.length);
 
 		if(warn_unsaved_changes) {
 			const char warning[] = " has unsaved changes.";
@@ -250,8 +279,11 @@ void
 gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 	switch(event) {
 		case mouse_scrolldown:
+			display_scroll(4);
+			break;
+
 		case mouse_scrollup:
-			display_scroll(event == mouse_scrolldown ? 4 : -4);
+			display_scroll(-4);
 			break;
 
 		case mouse_left:
@@ -328,22 +360,40 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			if(selection_valid) {
 				erase_selection();
 			} else if(cursor_pos > 0) {
-				erase_rune(cursor_pos - 1);
+				delete_rune(cursor_pos - 1);
 			}
 		} else if(ch == ctrl_u) {
 			if(selection_valid) {
 				erase_selection();
 			} else {
-				erase_runes(buffer_bol(buf, cursor_pos), cursor_pos);
+				delete_runes(buffer_bol(buf, cursor_pos), cursor_pos);
 			}
 		} else if(ch == ctrl_s) {
-			if(!buffer_save(buf)) {
+			FILE *file = fopen(buf_file_path, "wb");
+
+			if(!file) {
 				// TODO: handle error
+				return;
+			}
+
+			for(uint32_t i = 0;;) {
+				const char *runes = buffer_read(buf, i, &i);
+
+				if(!i) {
+					break;
+				}
+
+				if(fwrite(runes, 1, i, file) < i) {
+					// TODO: handle error
+					fclose(file);
+					return;
+				}
 			}
 
 			warn_unsaved_changes = 0;
 			log_clear(&undo);
 			log_clear(&redo);
+			fclose(file);
 		} else if(ch == ctrl_z || ch == ctrl_y) {
 			log_t       *push = ch == ctrl_z ? &redo : &undo;
 			log_t       *pop  = ch == ctrl_z ? &undo : &redo;
@@ -358,7 +408,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 							s8_append(&erased, buffer_get(buf, top->at + i));
 						}
 						log_push_erase(push, top->at, erased);
-						erase_runes2(top->at, top->at + top->length, false);
+						delete_runes2(top->at, top->at + top->length, false);
 						break;
 
 					case entry_erase:
@@ -396,7 +446,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 				}
 			}
 
-			erase_runes(whitespace, cursor_pos);
+			delete_runes(whitespace, cursor_pos);
 		} else if(ch == tab && selection_valid) {
 			b32 newline = 1;
 			isize begin = selection_begin();
@@ -410,7 +460,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 
 					if(modifiers & 1) {
 						if(rune == '\t') {
-							erase_rune(i);
+							delete_rune(i);
 							end--;
 						}
 					} else {
@@ -456,7 +506,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 					}
 				}
 
-				erase_runes(whitespace, cursor_pos);
+				delete_runes(whitespace, cursor_pos);
 				insert_runes(cursor_pos, indent);
 			} else {
 				insert_rune(cursor_pos, ch);
@@ -556,17 +606,17 @@ insert_runes2(isize at, s8 runes, bool edit) {
 }
 
 static void
-erase_rune(isize at) {
-	erase_runes2(at, at + 1, true);
+delete_rune(isize at) {
+	delete_runes2(at, at + 1, true);
 }
 
 static void
-erase_runes(isize begin, isize end) {
-	erase_runes2(begin, end, true);
+delete_runes(isize begin, isize end) {
+	delete_runes2(begin, end, true);
 }
 
 static void
-erase_runes2(isize begin, isize end, bool edit) {
+delete_runes2(isize begin, isize end, bool edit) {
 	if(edit) {
 		s8 erased = {0};
 		erased.data = malloc((size_t)(end - begin));
@@ -577,7 +627,7 @@ erase_runes2(isize begin, isize end, bool edit) {
 		log_clear(&redo);
 	}
 
-	buffer_erase_runes(buf, begin, end);
+	buffer_delete_runes(buf, begin, end);
 	syntax_erase(syntax, buf, begin, end);
 	set_cursor_pos(begin);
 }
@@ -619,7 +669,7 @@ selection_end(void) {
 static void
 erase_selection(void) {
 	if(selection_valid) {
-		erase_runes(selection_begin(), selection_end() + 1);
+		delete_runes(selection_begin(), selection_end() + 1);
 	}
 }
 
