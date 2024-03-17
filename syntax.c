@@ -23,7 +23,6 @@ struct syntax {
 	TSSymbol  string_symbol;
 	TSSymbol  char_symbol;
 	TSSymbol  comment_symbol;
-	TSSymbol  type_symbol;
 	bool     *keyword_symbols;
 	struct stack stack;
 };
@@ -53,14 +52,11 @@ syntax_new() {
 	syn->string_symbol  = ts_language_symbol_for_name(language, "string_literal", 14, true);
 	syn->char_symbol    = ts_language_symbol_for_name(language, "char_literal",   12, true);
 	syn->comment_symbol = ts_language_symbol_for_name(language, "comment",         7, true);
-	syn->type_symbol    = ts_language_symbol_for_name(language, "primitive_type", 14, true);
 
 	static const char *c99_keywords[] = {
-	    "auto", "break", "case", "char", "const", "continue", "default", "do",
-	    "double", "else", "enum", "extern", "float", "for", "goto", "if",
-	    "inline", "int", "long", "register", "restrict", "return", "short", "signed",
-	    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned", "void",
-	    "volatile", "while",
+	    "break", "case", "continue", "default", "do",
+	    "else", "enum", "for", "goto", "if", "return",
+	    "switch", "while",
 	};
 	syn->keyword_symbols = calloc(ts_language_symbol_count(language), sizeof(bool));
 
@@ -125,9 +121,7 @@ syntax_highlight_next(syntax_t *syn, isize at, highlight_t *out) {
 			out->event = syntax_comment;
 		} else if(sym == syn->string_symbol || sym == syn->char_symbol) {
 			out->event = syntax_string;
-		} else if(sym == syn->type_symbol) {
-			out->event = syntax_keyword;
-		} else if(sym < 1000 && syn->keyword_symbols[sym]) { // TODO: get rid of 1000
+		} else if(!ts_node_is_error(top->node) && syn->keyword_symbols[sym]) {
 			out->event = syntax_keyword;
 		} else {
 			emit = false;
