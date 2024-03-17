@@ -2,8 +2,6 @@
 
 #include <string.h>
 
-/* BUFFER IMPLEMENTATION BEGIN */
-
 struct buffer {
 	isize  length;
 	char   runes[1 << 30];
@@ -13,11 +11,9 @@ static buffer *buffers[1];
 
 buffer*
 buffer_new(arena *arena) {
-	buffer *buf  = 0;
-
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(!buffers[i]) {
-			buf = arena_alloc(arena, sizeof(buffer), 1 << 16, 1, ALLOC_NOZERO);
+			buffer *buf = arena_alloc(arena, sizeof(buffer), 1 << 16, 1, ALLOC_NOZERO);
 			buf->length = 0;
 			return buffers[i] = buf;
 		}
@@ -111,5 +107,3 @@ buffer_read(buffer *buf, uint32_t byte_index, uint32_t *bytes_read) {
 	*bytes_read = (uint32_t)buf->length - byte_index;
 	return buf->runes + byte_index;
 }
-
-/* BUFFER IMPLEMENTATION END */

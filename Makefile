@@ -5,6 +5,8 @@ CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wdouble-promotion -Wconversion -fs
 
 windows: main_win32.o buffer.o gui.o util.o syntax.o log.o tree-sitter.o tree-sitter-c.o
 	$(CC) $(LDFLAGS) -mwindows -o bed$(EXE) $^ $(LDLIBS)
+test: tree-sitter.o tree-sitter-c.o test.c
+	$(CC) $(CFLAGS) -o test$(EXE) $^
 clean:
 	rm -f bed$(EXE) *.o
 

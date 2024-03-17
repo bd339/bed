@@ -4,6 +4,8 @@
 #include "buffer.h"
 #include "util.h"
 
+#include <stdbool.h>
+
 typedef unsigned color;
 
 #define rgb(r, g, b) ((r) << 16 | (g) << 8 | (b))
@@ -32,6 +34,7 @@ int        gui_font_height(void);
 dimensions gui_dimensions(void);
 void       gui_text(int, int, s8);
 void       gui_set_text_color(color);
+void       gui_set_text_bold(bool);
 void       gui_redraw(arena);
 void       gui_reflow(void);
 void       gui_mouse(gui_event, int, int);

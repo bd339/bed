@@ -42,16 +42,17 @@ static void  erase_selection(void);
 typedef struct {
 	int x;
 	int y;
-} point;
+	int w;
+} cell;
 
 static struct {
-	point* data;
+	cell  *data;
 	isize  length;
 	isize  capacity;
 } display;                // Slice of x,y coords of every rune in the display
 static isize display_pos; // Buffer position of the first rune visible in the display
 
-static point xy_at_buffer_pos(isize);
+static cell  xy_at_buffer_pos(isize);
 static isize buffer_pos_at_xy(int, int);
 static void  display_scroll(int);
 
@@ -64,14 +65,18 @@ static void  display_scroll(int);
 #define MARGIN_L     0
 #define MARGIN_R     5
 
-unsigned            *pixels;
-static buffer       *buf;
-static const char   *buf_file_path;
-static syntax_t     *syntax;
-static highlights_t  highlights;
-static log_t         undo;
-static log_t         redo;
-static b32           warn_unsaved_changes;
+unsigned          *pixels;
+static buffer     *buf;
+static const char *buf_file_path;
+static syntax_t   *syntax;
+static log_t       undo;
+static log_t       redo;
+static b32         warn_unsaved_changes;
+static struct {
+	highlight_t *data;
+	isize        length;
+	isize        capacity;
+} highlights;
 
 static void draw_rect(int, int, int, int, color);
 static void draw_cursor(int, int, int);
@@ -86,14 +91,18 @@ static b32  buffer_is_dirty(buffer*);
 
 b32
 gui_file_open(arena *memory, const char *file_path) {
-	if(!(buf = buffer_new(memory))) {
-		return 0;
-	}
-
 	FILE *file = fopen(file_path, "rb");
 
 	if(!file) {
 		// TODO: handle error
+		goto FAIL;
+	}
+
+	if(!(buf = buffer_new(memory))) {
+		goto FAIL;
+	}
+
+	if(!(syntax = syntax_new())) {
 		goto FAIL;
 	}
 
@@ -112,10 +121,6 @@ gui_file_open(arena *memory, const char *file_path) {
 		buffer_insert_runes(buf, buffer_length(buf), iobuf);
 	}
 
-	if(!(syntax = syntax_new())) {
-		goto FAIL;
-	}
-
 	buf_file_path = strdup(file_path);
 	syntax_insert(syntax, buf, 0, buffer_length(buf));
 	fclose(file);
@@ -123,13 +128,15 @@ gui_file_open(arena *memory, const char *file_path) {
 
 FAIL:
 	if(file) fclose(file);
+	if(syntax) syntax_free(syntax);
 	return 0;
 }
 
 void
 gui_redraw(arena memory) {
-	dimensions dim = gui_dimensions();
-	color magenta  = rgb(255, 0, 255);
+	dimensions dim         = gui_dimensions();
+	color      magenta     = rgb(255, 0, 255);
+	int        line_height = gui_font_height();
 
 	{ // Draw background
 		color bg_color = rgb(255, 255, 234);
@@ -164,40 +171,44 @@ gui_redraw(arena memory) {
 		gui_set_text_color(warn_unsaved_changes ? rgb(255, 255, 255) : rgb(0, 0, 0));
 		gui_text(MARGIN_L, dim.h - gui_font_height(), buffer_label);
 		gui_text(dim.w - MARGIN_R - 75, dim.h - gui_font_height(), line_label);
+		gui_set_text_color(rgb(0, 0, 0));
 	}
 
 	{ // Draw selection
 		if(selection_valid) {
 			for(isize i = selection_begin(); i <= selection_end(); ++i) {
 				if(display_pos <= i && i < display_pos + display.length) {
-					point xy = xy_at_buffer_pos(i);
-					int width = rune_width(buffer_get(buf, i));
-					draw_rect(xy.x, xy.y, width, gui_font_height(), rgb(208, 235, 255));
+					cell xy = xy_at_buffer_pos(i);
+					draw_rect(xy.x, xy.y, xy.w, gui_font_height(), rgb(208, 235, 255));
 				}
 			}
 		}
 	}
 
 	{ // Draw runes
-		gui_set_text_color(0);
-
-		static const color syntax_colors[syntax_end + 1] = {
+		static const color syntax_colors[syntax_end] = {
 			[syntax_comment] = rgb(128, 128, 128),
 			[syntax_string]  = rgb(244, 187, 68),
-			[syntax_end]     = rgb(0, 0, 0),
 		};
-		highlight_t *next_highlight = highlights.data;
-
-		int line_height = gui_font_height();
+		highlight_t *highlight = highlights.data;
 
 		for(isize i = display_pos; i < display_pos + display.length; ++i) {
-			if(next_highlight < highlights.data + highlights.length && next_highlight->at == i) {
-				highlight_t *highlight = next_highlight++;
-				gui_set_text_color(syntax_colors[highlight->event]);
+			if(highlight < highlights.data + highlights.length && highlight->end == i) {
+				gui_set_text_bold(false);
+				gui_set_text_color(0);
+				highlight++;
+			}
+
+			if(highlight < highlights.data + highlights.length && highlight->begin == i) {
+				if(highlight->event == syntax_keyword) {
+					gui_set_text_bold(true);
+				} else {
+					gui_set_text_color(syntax_colors[highlight->event]);
+				}
 			}
 
 			int rune = buffer_get(buf, i);
-			point xy = xy_at_buffer_pos(i);
+			cell xy  = xy_at_buffer_pos(i);
 
 			draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, rgb(0, 255, 0));
 
@@ -209,7 +220,7 @@ gui_redraw(arena memory) {
 
 					if(rune == '\t' || rune == ' ' || rune == '\r') {
 						xy = xy_at_buffer_pos(j);
-						draw_rect(xy.x, xy.y, rune_width(rune), line_height, rgb(255, 0, 0));
+						draw_rect(xy.x, xy.y, xy.w, line_height, rgb(255, 0, 0));
 					} else {
 						break;
 					}
@@ -227,9 +238,8 @@ gui_redraw(arena memory) {
 
 		if(cursor_state < 15 || (cursor_state >= 30 && cursor_state < 45)) {
 			if(display_pos <= cursor_pos && cursor_pos < display_pos + display.length) {
-				point cursor_xy = xy_at_buffer_pos(cursor_pos);
-				int rune = buffer_get(buf, cursor_pos);
-				draw_cursor(cursor_xy.x, cursor_xy.y, rune != -1 ? rune_width(rune) : 8);
+				cell cursor_xy = xy_at_buffer_pos(cursor_pos);
+				draw_cursor(cursor_xy.x, cursor_xy.y, cursor_xy.w);
 			}
 		}
 	}
@@ -246,33 +256,52 @@ gui_reflow(void) {
 		int y = MARGIN_TOP;
 		int display_bot = dim.h - MARGIN_BOT - gui_font_height();
 
+		highlights.length = 0;
+		syntax_highlight_begin(syntax);
+
 		for(isize i = display_pos; y < display_bot; ++i) {
 			int rune = buffer_get(buf, i);
 
 			if(rune == -1) {
-				*push(&display) = (point){ x, y };
+				*push(&display) = (cell){ x, y, 8 };
 				break;
+			}
+
+			if(highlights.length && highlights.data[highlights.length - 1].end == i) {
+				gui_set_text_bold(false);
+			}
+
+			if(!highlights.length || highlights.data[highlights.length - 1].end <= i) {
+				highlight_t highlight;
+
+				if(syntax_highlight_next(syntax, i, &highlight)) {
+					if(highlight.event == syntax_keyword) {
+						gui_set_text_bold(true);
+					}
+
+					*push(&highlights) = highlight;
+				}
 			}
 
 			int width = rune_width(rune);
 
 			if(rune == '\n') {
-				*push(&display) = (point){ x, y };
+				*push(&display) = (cell){ x, y, width };
 				x = MARGIN_L;
 				y += gui_font_height();
 			} else if(x + width > dim.w - MARGIN_R) {
 				x = MARGIN_L;
 				y += gui_font_height();
-				*push(&display) = (point){ x, y };
+				*push(&display) = (cell){ x, y, width };
 				x += width;
 			} else {
-				*push(&display) = (point){ x, y };
+				*push(&display) = (cell){ x, y, width };
 				x += width;
 			}
 		}
-	}
 
-	syntax_highlight(syntax, display_pos, display_pos + display.length, &highlights);
+		syntax_highlight_end(syntax);
+	}
 }
 
 void
@@ -326,7 +355,7 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 	} else if(event == kbd_right) {
 		set_cursor_pos(cursor_pos + (cursor_pos < buffer_length(buf)));
 	} else if(event == kbd_down || event == kbd_up) {
-		point cursor_xy = xy_at_buffer_pos(cursor_pos);
+		cell cursor_xy = xy_at_buffer_pos(cursor_pos);
 		int target_x = cursor_xy.x < cursor_x ? cursor_x : cursor_xy.x;
 		int line_height = gui_font_height();
 		int target_y = cursor_xy.y + (event == kbd_down ? line_height : -line_height);
@@ -628,7 +657,7 @@ delete_runes2(isize begin, isize end, bool edit) {
 	}
 
 	buffer_delete_runes(buf, begin, end);
-	syntax_erase(syntax, buf, begin, end);
+	syntax_delete(syntax, buf, begin, end);
 	set_cursor_pos(begin);
 }
 
@@ -677,7 +706,7 @@ erase_selection(void) {
 
 /* DISPLAY IMPLEMENTATION BEGIN */
 
-static point
+static cell
 xy_at_buffer_pos(isize pos) {
 	assert(display_pos <= pos && pos < display_pos + display.length);
 	return display.data[pos - display_pos];

@@ -5,7 +5,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
-//#include <stdio.h>
+#include <stdio.h>
 
 #define MEM_SIZE 1024 * 1024 * 1024 * 1024ull
 
@@ -179,7 +179,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 
 int WINAPI
 WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdShow) {
-#if 0
+#if 1
 	AllocConsole();
 	freopen("CONOUT$", "w", stdout);
 #endif
@@ -311,6 +311,11 @@ gui_set_text_color(color rgb) {
 	DWORD g = rgb >>  8 & 0xFF;
 	DWORD b = rgb >>  0 & 0xFF;
 	SetTextColor(backbuffer, RGB(r, g, b));
+}
+
+void
+gui_set_text_bold(bool bold) {
+	SelectObject(backbuffer, bold ? bold_font : font);
 }
 
 b32 gui_is_active(void) {
