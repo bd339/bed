@@ -21,7 +21,6 @@ struct syntax {
 	TSParser *parser;
 	TSTree   *tree;
 	TSSymbol  string_symbol;
-	TSSymbol  char_symbol;
 	TSSymbol  comment_symbol;
 	bool     *keyword_symbols;
 	struct stack stack;
@@ -50,7 +49,6 @@ syntax_new() {
 	}
 
 	syn->string_symbol  = ts_language_symbol_for_name(language, "string_literal", 14, true);
-	syn->char_symbol    = ts_language_symbol_for_name(language, "char_literal",   12, true);
 	syn->comment_symbol = ts_language_symbol_for_name(language, "comment",         7, true);
 
 	static const char *c99_keywords[] = {
@@ -113,13 +111,12 @@ bool
 syntax_highlight_next(syntax_t *syn, isize at, highlight_t *out) {
 	while(syn->stack.length) {
 		struct syntax_node *top = syn->stack.data + syn->stack.length - 1;
-
 		TSSymbol sym  = ts_node_symbol(top->node);
 		bool     emit = true;
 
 		if(sym == syn->comment_symbol) {
 			out->event = syntax_comment;
-		} else if(sym == syn->string_symbol || sym == syn->char_symbol) {
+		} else if(sym == syn->string_symbol) {
 			out->event = syntax_string;
 		} else if(!ts_node_is_error(top->node) && syn->keyword_symbols[sym]) {
 			out->event = syntax_keyword;

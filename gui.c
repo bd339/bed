@@ -80,7 +80,6 @@ static struct {
 
 static void draw_rect(int, int, int, int, color);
 static void draw_cursor(int, int, int);
-static int  rune_width(int);
 static void insert_rune(isize, int);
 static void insert_runes(isize, s8);
 static void insert_runes2(isize, s8, bool);
@@ -127,8 +126,9 @@ gui_file_open(arena *memory, const char *file_path) {
 	return 1;
 
 FAIL:
-	if(file) fclose(file);
+	if(file)   fclose(file);
 	if(syntax) syntax_free(syntax);
+	if(buf)    buffer_free(buf);
 	return 0;
 }
 
@@ -283,7 +283,7 @@ gui_reflow(void) {
 				}
 			}
 
-			int width = rune_width(rune);
+			int width = rune == '\t' ? 4 * gui_font_width(' ') : gui_font_width(rune);
 
 			if(rune == '\n') {
 				*push(&display) = (cell){ x, y, width };
@@ -605,11 +605,6 @@ draw_cursor(int x, int y, int w) {
 
 		row += dim.w;
 	}
-}
-
-static int
-rune_width(int rune) {
-	return rune == '\t' ? 4 * gui_font_width(' ') : gui_font_width(rune);
 }
 
 static void
