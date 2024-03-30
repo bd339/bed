@@ -146,7 +146,6 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			bitmap = CreateDIBSection(0, &bitmap_info, DIB_RGB_COLORS, &rgb, 0, 0);
 			SelectObject(backbuffer, bitmap);
 			SelectObject(backbuffer, font);
-			SetBkMode(backbuffer, TRANSPARENT);
 
 			if(rgb) {
 				pixels = rgb;
@@ -316,6 +315,14 @@ gui_set_text_color(color rgb) {
 void
 gui_set_text_bold(bool bold) {
 	SelectObject(backbuffer, bold ? bold_font : font);
+}
+
+void
+gui_set_bg_color(color rgb) {
+	DWORD r = rgb >> 16 & 0xFF;
+	DWORD g = rgb >>  8 & 0xFF;
+	DWORD b = rgb >>  0 & 0xFF;
+	SetBkColor(backbuffer, RGB(r, g, b));
 }
 
 b32 gui_is_active(void) {

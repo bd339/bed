@@ -35,6 +35,7 @@ dimensions gui_dimensions(void);
 void       gui_text(int, int, s8);
 void       gui_set_text_color(color);
 void       gui_set_text_bold(bool);
+void       gui_set_bg_color(color);
 void       gui_redraw(arena);
 void       gui_reflow(void);
 void       gui_mouse(gui_event, int, int);

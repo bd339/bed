@@ -136,14 +136,15 @@ void
 gui_redraw(arena memory) {
 	dimensions dim         = gui_dimensions();
 	color      magenta     = rgb(255, 0, 255);
+	color      bg_color    = rgb(255, 255, 234);
 	int        line_height = gui_font_height();
 
 	{ // Draw background
-		color bg_color = rgb(255, 255, 234);
 		draw_rect(0, 0, dim.w, dim.h, bg_color);
 		draw_rect(0, 0, dim.w, MARGIN_TOP, magenta);
 		draw_rect(0, 0, MARGIN_L, dim.h, magenta);
 		draw_rect(dim.w - MARGIN_R, 0, MARGIN_R, dim.h, magenta);
+		gui_set_bg_color(bg_color);
 	}
 
 	{ // Draw buffer tag line
@@ -173,7 +174,7 @@ gui_redraw(arena memory) {
 		gui_text(dim.w - MARGIN_R - 75, dim.h - gui_font_height(), line_label);
 		gui_set_text_color(rgb(0, 0, 0));
 	}
-
+#if 0
 	{ // Draw selection
 		if(selection_valid) {
 			for(isize i = selection_begin(); i <= selection_end(); ++i) {
@@ -184,7 +185,7 @@ gui_redraw(arena memory) {
 			}
 		}
 	}
-
+#endif
 	{ // Draw runes
 		static const color syntax_colors[syntax_end] = {
 			[syntax_comment] = rgb(128, 128, 128),
@@ -205,6 +206,12 @@ gui_redraw(arena memory) {
 				} else {
 					gui_set_text_color(syntax_colors[highlight->event]);
 				}
+			}
+
+			if(selection_valid && i == selection_begin()) {
+				gui_set_bg_color(rgb(208, 235, 255));
+			} else if(selection_valid && i == selection_end()) {
+				gui_set_bg_color(bg_color);
 			}
 
 			int rune = buffer_get(buf, i);
