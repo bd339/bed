@@ -169,23 +169,14 @@ gui_redraw(arena memory) {
 		line_label.data   = arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
 		line_label.length = sprintf(line_label.data, "%d,%d", li.line, li.col);
 
+		gui_set_bg_color(tag_color);
 		gui_set_text_color(warn_unsaved_changes ? rgb(255, 255, 255) : rgb(0, 0, 0));
 		gui_text(MARGIN_L, dim.h - gui_font_height(), buffer_label);
 		gui_text(dim.w - MARGIN_R - 75, dim.h - gui_font_height(), line_label);
 		gui_set_text_color(rgb(0, 0, 0));
+		gui_set_bg_color(bg_color);
 	}
-#if 0
-	{ // Draw selection
-		if(selection_valid) {
-			for(isize i = selection_begin(); i <= selection_end(); ++i) {
-				if(display_pos <= i && i < display_pos + display.length) {
-					cell xy = xy_at_buffer_pos(i);
-					draw_rect(xy.x, xy.y, xy.w, gui_font_height(), rgb(208, 235, 255));
-				}
-			}
-		}
-	}
-#endif
+
 	{ // Draw runes
 		static const color syntax_colors[syntax_end] = {
 			[syntax_comment] = rgb(128, 128, 128),
@@ -281,7 +272,7 @@ gui_reflow(void) {
 			if(!highlights.length || highlights.data[highlights.length - 1].end <= i) {
 				highlight_t highlight;
 
-				if(syntax_highlight_next(syntax, i, &highlight)) {
+				if(syntax_highlight_next(syntax, buf, i, &highlight)) {
 					if(highlight.event == syntax_keyword) {
 						gui_set_text_bold(true);
 					}

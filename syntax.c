@@ -22,6 +22,8 @@ struct syntax {
 	TSTree   *tree;
 	TSSymbol  string_symbol;
 	TSSymbol  comment_symbol;
+	TSSymbol  preproc_if_symbol;
+	TSFieldId condition_field;
 	bool     *keyword_symbols;
 	struct stack stack;
 };
@@ -50,6 +52,8 @@ syntax_new() {
 
 	syn->string_symbol  = ts_language_symbol_for_name(language, "string_literal", 14, true);
 	syn->comment_symbol = ts_language_symbol_for_name(language, "comment",         7, true);
+	syn->preproc_if_symbol = ts_language_symbol_for_name(language, "preproc_if",  10, true);
+	syn->condition_field   = ts_language_field_id_for_name(language, "condition",  9);
 
 	static const char *c99_keywords[] = {
 	    "break", "case", "continue", "default", "do",
@@ -108,7 +112,7 @@ syntax_highlight_begin(syntax_t *syn) {
 }
 
 bool
-syntax_highlight_next(syntax_t *syn, isize at, highlight_t *out) {
+syntax_highlight_next(syntax_t *syn, buffer* buf, isize at, highlight_t *out) {
 	while(syn->stack.length) {
 		struct syntax_node *top = syn->stack.data + syn->stack.length - 1;
 		TSSymbol sym  = ts_node_symbol(top->node);
@@ -116,6 +120,14 @@ syntax_highlight_next(syntax_t *syn, isize at, highlight_t *out) {
 
 		if(sym == syn->comment_symbol) {
 			out->event = syntax_comment;
+		} else if(sym == syn->preproc_if_symbol) {
+			TSNode cond = ts_node_child_by_field_id(top->node, syn->condition_field);
+
+			if(ts_node_end_byte(cond) - ts_node_start_byte(cond) == 1 && buffer_get(buf, ts_node_start_byte(cond)) == '0') {
+				out->event = syntax_comment;
+			} else {
+				emit = false;
+			}
 		} else if(sym == syn->string_symbol) {
 			out->event = syntax_string;
 		} else if(!ts_node_is_error(top->node) && syn->keyword_symbols[sym]) {
