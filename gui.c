@@ -246,13 +246,15 @@ gui_redraw(arena memory) {
 /* Must be called whenever buffer contents change or the dimensions change. */
 void
 gui_reflow(void) {
-	highlights.length = 0;
-	display.length = 0;
-
 	dimensions dim = gui_dimensions();
 	int x = MARGIN_L;
 	int y = MARGIN_TOP;
 	int display_bot = dim.h - MARGIN_BOT - gui_font_height();
+	cell *c;
+	highlight_t highlight;
+
+	highlights.length = 0;
+	display.length = 0;
 
 	syntax_highlight_begin(syntax);
 
@@ -260,7 +262,10 @@ gui_reflow(void) {
 		int rune = buffer_get(buf, i);
 
 		if(rune == -1) {
-			*push(&display) = (cell){ x, y, 8 };
+			c = push(&display);
+			c->x = x;
+			c->y = y;
+			c->w = 8;
 			break;
 		}
 
@@ -269,8 +274,6 @@ gui_reflow(void) {
 		}
 
 		if(!highlights.length || highlights.data[highlights.length - 1].end <= i) {
-			highlight_t highlight;
-
 			if(syntax_highlight_next(syntax, buf, i, &highlight)) {
 				if(highlight.event == syntax_keyword) {
 					gui_set_text_bold(true);
@@ -283,16 +286,25 @@ gui_reflow(void) {
 		int width = rune == '\t' ? 4 * gui_font_width(' ') : gui_font_width(rune);
 
 		if(rune == '\n') {
-			*push(&display) = (cell){ x, y, width };
+			c = push(&display);
+			c->x = x;
+			c->y = y;
+			c->w = width;
 			x = MARGIN_L;
 			y += gui_font_height();
 		} else if(x + width > dim.w - MARGIN_R) {
 			x = MARGIN_L;
 			y += gui_font_height();
-			*push(&display) = (cell){ x, y, width };
+			c = push(&display);
+			c->x = x;
+			c->y = y;
+			c->w = width;
 			x += width;
 		} else {
-			*push(&display) = (cell){ x, y, width };
+			c = push(&display);
+			c->x = x;
+			c->y = y;
+			c->w = width;
 			x += width;
 		}
 	}

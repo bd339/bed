@@ -41,12 +41,10 @@ void *arena_alignas(void*, isize);
 
 void slice_grow(void*, isize);
 
-#define push(s) ({                                                                                 \
-	typeof(s) _s = s;                                                                              \
-	if(_s->length >= _s->capacity) {                                                               \
-		slice_grow(_s, sizeof(*_s->data));                                                         \
-	}                                                                                              \
-	_s->data + _s->length++;                                                                       \
-})
+#define push(s) \
+	((s)->length >= (s)->capacity         \
+	 ? slice_grow(s, sizeof(*(s)->data)), \
+	   (s)->data + (s)->length++          \
+	 : (s)->data + (s)->length++)
 
 #endif // BED_UTIL_H

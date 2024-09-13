@@ -58,7 +58,7 @@ syntax_new() {
 	static const char *c99_keywords[] = {
 	    "break", "case", "continue", "default", "do",
 	    "else", "enum", "for", "goto", "if", "return",
-	    "switch", "while",
+	    "struct", "switch", "while",
 	};
 	syn->keyword_symbols = calloc(ts_language_symbol_count(language), sizeof(bool));
 
@@ -105,14 +105,16 @@ bool syntax_verbose;
 
 void
 syntax_highlight_begin(syntax_t *syn) {
-	*push(&syn->stack) = (struct syntax_node) {
-		.node = ts_tree_root_node(syn->tree),
-		.i = 0,
-	};
+	struct syntax_node *syn_node;
+	syn_node = push(&syn->stack);
+	syn_node->node = ts_tree_root_node(syn->tree);
+	syn_node->i = 0;
 }
 
 bool
 syntax_highlight_next(syntax_t *syn, buffer* buf, isize at, highlight_t *out) {
+	struct syntax_node *syn_node;
+
 	while(syn->stack.length) {
 		struct syntax_node *top = syn->stack.data + syn->stack.length - 1;
 		TSSymbol sym  = ts_node_symbol(top->node);
@@ -147,10 +149,9 @@ syntax_highlight_next(syntax_t *syn, buffer* buf, isize at, highlight_t *out) {
 			TSNode child = ts_node_child(top->node, top->i);
 
 			if(ts_node_start_byte(child) <= at && at < ts_node_end_byte(child)) {
-				*push(&syn->stack) = (struct syntax_node) {
-					.node = child,
-					.i = 0,
-				};
+				syn_node = push(&syn->stack);
+				syn_node->node = child;
+				syn_node->i = 0;
 				top->i++;
 				goto NEXT;
 			} else if(at < ts_node_start_byte(child)) {

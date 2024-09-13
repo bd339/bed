@@ -6,6 +6,7 @@
 #include <windowsx.h>
 
 #include <stdio.h>
+#include <string.h>
 
 #define MEM_SIZE 1024 * 1024 * 1024 * 1024ull
 
@@ -227,9 +228,12 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 		return 4;
 	}
 
-	font = GetStockObject(SYSTEM_FIXED_FONT);
-	LOGFONT lf;
-	GetObject(font, sizeof(LOGFONT), &lf);
+	LOGFONT lf = {0};
+	lf.lfHeight = 20;
+	lf.lfWidth = 9;
+	lf.lfWeight = 550;
+	strcpy(lf.lfFaceName, "Cascadia Mono");
+	font = CreateFontIndirect(&lf);
 	lf.lfWeight = FW_BOLD;
 	bold_font = CreateFontIndirect(&lf);
 
