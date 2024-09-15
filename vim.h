@@ -37,6 +37,7 @@ struct vim_state_s
 	int                buf;
 };
 
+void vim_init(vim_state_t *vim);
 void vim_parse(vim_state_t *vim, int rune);
 
 #endif // BED_VIM_H

@@ -1,6 +1,6 @@
 #include "vim.h"
+#include "ebuf.h"
 
-#include <assert.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -13,15 +13,43 @@ enum vim_flag_e
 	VIM_FLAG_ZERO_COUNT = 16, /* can this motion have a 0 count */
 };
 
+static void vim_insert_mode(vim_state_t *vim)
+{
+	vim->mode = VIM_MODE_INS;
+}
+
+static void vim_hjkl(vim_state_t *vim)
+{
+	ebuf_t *ebuf = (ebuf_t*)vim;
+
+	switch(vim->pcmd->chr) {
+	case 'h':
+		ebuf->cursor_pos -= ebuf->cursor_pos > 0;
+		break;
+	case 'l':
+		ebuf->cursor_pos += ebuf->cursor_pos < buffer_length(ebuf->buf);
+		break;
+	}
+}
+
 struct vim_key_s
 {
-	int flags;
+	int    flags;
+	void (*cb)(vim_state_t*);
 };
 
-static struct vim_key_s vim_keys[128];
+static struct vim_key_s vim_keys[128] =
+{
+	['i'] = {0, vim_insert_mode},
+	['h'] = {VIM_FLAG_MOTION, vim_hjkl},
+	['j'] = {VIM_FLAG_MOTION, vim_hjkl},
+	['k'] = {VIM_FLAG_MOTION, vim_hjkl},
+	['l'] = {VIM_FLAG_MOTION, vim_hjkl},
+};
 
 static void vim_do_cmd(vim_state_t *vim)
 {
+	vim_keys[vim->pcmd->chr].cb(vim);
 }
 
 static void vim_parse_cmd(vim_state_t *vim, int rune)
@@ -78,7 +106,8 @@ gotarg:
 			}
 
 			vim_do_cmd(vim);
-			goto reset;
+			vim->pcmd = &vim->cmd;
+			vim->parser_state = VIM_PARSER_BUFFER_DQUOTE;
 		}
 		break;
 	case VIM_PARSER_CMD_DOUBLE:
@@ -97,10 +126,24 @@ reset:
 	vim->pcmd = &vim->cmd;
 }
 
+void vim_init(vim_state_t *vim)
+{
+	memset(vim, 0, sizeof(*vim));
+	vim->pcmd = &vim->cmd;
+}
+
 void vim_parse(vim_state_t *vim, int rune)
 {
 	switch(vim->mode) {
-	case VIM_MODE_INS: putchar(rune & 0x7F);     break;
-	case VIM_MODE_CMD: vim_parse_cmd(vim, rune); break;
+	case VIM_MODE_INS:
+		if(rune == 27) { /* ESC */
+			vim_init(vim);
+		} else {
+			ebuf_ins((ebuf_t*)vim, rune);
+		}
+		break;
+	case VIM_MODE_CMD:
+		vim_parse_cmd(vim, rune);
+		break;
 	}
 }
