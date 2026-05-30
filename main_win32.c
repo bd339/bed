@@ -94,9 +94,11 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 
 		case WM_MOUSEWHEEL: {
 			int delta = GET_WHEEL_DELTA_WPARAM(wParam);
-			int x = GET_X_LPARAM(lParam);
-			int y = GET_Y_LPARAM(lParam);
-			gui_mouse(delta > 0 ? mouse_scrollup : mouse_scrolldown, x, y);
+			POINT pt;
+			pt.x = GET_X_LPARAM(lParam);
+			pt.y = GET_Y_LPARAM(lParam);
+			ScreenToClient(window, &pt);
+			gui_mouse(delta > 0 ? mouse_scrollup : mouse_scrolldown, pt.x, pt.y);
 			break;
 		}
 
