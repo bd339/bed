@@ -37,6 +37,8 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 	static int drag_x;
 	static int drag_y;
 	static b32 typing;
+	b32 shift = 0;
+	gui_event event;
 
 	switch(message) {
 		case WM_CHAR:
@@ -48,8 +50,9 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 				typing = 1;
 			}
 
-			b32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-			gui_keyboard(memory, kbd_char + (wParam & 0xFF), shift);
+			shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+			event = (gui_event)(kbd_char + (wParam & 0xFF));
+			gui_keyboard(memory, event, shift);
 			break;
 
 		case WM_SETCURSOR:
@@ -65,8 +68,9 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 				case VK_UP:
 				case VK_RIGHT:
 				case VK_DOWN:
-					b32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-					gui_keyboard(memory, kbd_left + (wParam - VK_LEFT), shift);
+					shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+					event = (gui_event)(kbd_left + (wParam - VK_LEFT));
+					gui_keyboard(memory, event, shift);
 					break;
 			}
 			break;
@@ -133,7 +137,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 				DeleteDC(backbuffer);
 			}
 
-			BITMAPINFO bitmap_info = {0};
+			BITMAPINFO bitmap_info = {};
 			bitmap_info.bmiHeader.biSize        = sizeof(bitmap_info.bmiHeader);
 			bitmap_info.bmiHeader.biPlanes      = 1;
 			bitmap_info.bmiHeader.biBitCount    = 32;
@@ -148,7 +152,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			SelectObject(backbuffer, font);
 
 			if(rgb) {
-				pixels = rgb;
+				pixels = (unsigned int*)rgb;
 			}
 
 			gui_reflow();
@@ -183,7 +187,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 	freopen("CONOUT$", "w", stdout);
 #endif
 
-	memory.begin = VirtualAlloc(0, MEM_SIZE, MEM_RESERVE, PAGE_NOACCESS);
+	memory.begin = (char*)VirtualAlloc(0, MEM_SIZE, MEM_RESERVE, PAGE_NOACCESS);
 	memory.end = memory.begin + MEM_SIZE;
 
 	if(!memory.begin) {
@@ -199,7 +203,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 		return 2;
 	}
 
-	WNDCLASS window_class      = {0};
+	WNDCLASS window_class      = {};
 	window_class.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	window_class.lpfnWndProc   = window_proc;
 	window_class.hInstance     = hInstance;
@@ -227,7 +231,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 		return 4;
 	}
 
-	font = GetStockObject(SYSTEM_FIXED_FONT);
+	font = (HFONT)GetStockObject(SYSTEM_FIXED_FONT);
 	LOGFONT lf;
 	GetObject(font, sizeof(LOGFONT), &lf);
 	lf.lfWeight = FW_BOLD;
@@ -254,7 +258,7 @@ gui_clipboard_put(buffer *buffer, isize begin, isize end) {
 	OpenClipboard(window);
 	EmptyClipboard();
 	HGLOBAL mem = GlobalAlloc(GHND, (SIZE_T)(end - begin + 1));
-	char *ptr = GlobalLock(mem);
+	char *ptr = (char*)GlobalLock(mem);
 
 	for(isize i = begin; i < end; ++i) {
 		*ptr++ = (char)buffer_get(buffer, i);
@@ -267,11 +271,11 @@ gui_clipboard_put(buffer *buffer, isize begin, isize end) {
 
 s8
 gui_clipboard_get(void) {
-	s8 contents = {0};
+	s8 contents = {};
 	OpenClipboard(window);
 	HGLOBAL mem = GetClipboardData(CF_TEXT);
 	if(!mem) return contents;
-	contents.data = GlobalLock(mem);
+	contents.data = (char*)GlobalLock(mem);
 	contents.length = (isize)strlen(contents.data);
 	GlobalUnlock(mem);
 	CloseClipboard();

@@ -28,7 +28,7 @@ struct syntax {
 	struct stack stack;
 };
 
-TSLanguage *tree_sitter_c();
+extern "C" TSLanguage *tree_sitter_c();
 
 static const char *read(void*, uint32_t, TSPoint, uint32_t*);
 static void        edit(syntax_t*, buffer*, TSInputEdit);
@@ -38,7 +38,7 @@ syntax_new() {
 	syntax_t   *syn;
 	TSLanguage *language = tree_sitter_c();
 
-	if(!(syn = calloc(1, sizeof(*syn)))) {
+	if(!(syn = (syntax_t*)calloc(1, sizeof(*syn)))) {
 		goto FAIL;
 	}
 
@@ -60,7 +60,7 @@ syntax_new() {
 	    "else", "enum", "for", "goto", "if", "return",
 	    "switch", "while",
 	};
-	syn->keyword_symbols = calloc(ts_language_symbol_count(language), sizeof(bool));
+	syn->keyword_symbols = (bool*)calloc(ts_language_symbol_count(language), sizeof(bool));
 
 	for(int i = 0; i < countof(c99_keywords); ++i) {
 		uint16_t symbol = ts_language_symbol_for_name(language, c99_keywords[i], (uint32_t)strlen(c99_keywords[i]), false);
@@ -85,20 +85,20 @@ syntax_free(syntax_t *syn) {
 
 void
 syntax_insert(syntax_t *syn, buffer *buf, isize begin, isize end) {
-	edit(syn, buf, (TSInputEdit) {
-		.start_byte   = (uint32_t)begin,
-		.old_end_byte = (uint32_t)begin,
-		.new_end_byte = (uint32_t)end,
-	});
+	TSInputEdit e = {};
+	e.start_byte   = (uint32_t)begin;
+	e.old_end_byte = (uint32_t)begin;
+	e.new_end_byte = (uint32_t)end;
+	edit(syn, buf, e);
 }
 
 void
 syntax_delete(syntax_t *syn, buffer *buf, isize begin, isize end) {
-	edit(syn, buf, (TSInputEdit) {
-		.start_byte   = (uint32_t)begin,
-		.old_end_byte = (uint32_t)end,
-		.new_end_byte = (uint32_t)begin,
-	});
+	TSInputEdit e = {};
+	e.start_byte   = (uint32_t)begin;
+	e.old_end_byte = (uint32_t)end;
+	e.new_end_byte = (uint32_t)begin;
+	edit(syn, buf, e);
 }
 
 bool syntax_verbose;
@@ -180,7 +180,7 @@ syntax_highlight_end(syntax_t *syn) {
 
 static const char*
 read(void *payload, uint32_t byte_index, TSPoint position, uint32_t *bytes_read) {
-	return buffer_read(payload, byte_index, bytes_read);
+	return buffer_read((buffer*)payload, byte_index, bytes_read);
 }
 
 static void
@@ -188,12 +188,11 @@ edit(syntax_t *syn, buffer *buf, TSInputEdit edit) {
 	if(syn->tree) {
 		ts_tree_edit(syn->tree, &edit);
 	}
-
-	TSTree *tree = ts_parser_parse(syn->parser, syn->tree, (TSInput) {
-		.read = read,
-		.payload = buf,
-		.encoding = TSInputEncodingUTF8,
-	});
+	TSInput input = {};
+	input.read = read;
+	input.payload = buf;
+	input.encoding = TSInputEncodingUTF8;
+	TSTree *tree = ts_parser_parse(syn->parser, syn->tree, input);
 	assert(tree);
 
 	if(syn->tree) {

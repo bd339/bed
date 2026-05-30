@@ -91,6 +91,8 @@ static b32  buffer_is_dirty(buffer*);
 b32
 gui_file_open(arena *memory, const char *file_path) {
 	FILE *file = fopen(file_path, "rb");
+	arena tmp;
+	s8 iobuf;
 
 	if(!file) {
 		// TODO: handle error
@@ -105,9 +107,9 @@ gui_file_open(arena *memory, const char *file_path) {
 		goto FAIL;
 	}
 
-	arena tmp = *memory;
-	s8 iobuf = { .length = 8 * 1024 };
-	iobuf.data = arena_alloc(&tmp, 1, 1, iobuf.length, 0);
+	tmp = *memory;
+	iobuf.length = 8 * 1024;
+	iobuf.data = (char*)arena_alloc(&tmp, 1, 1, iobuf.length, 0);
 
 	while(!feof(file)) {
 		iobuf.length = (isize)fread(iobuf.data, 1, (size_t)iobuf.length, file);
@@ -152,7 +154,7 @@ gui_redraw(arena memory) {
 		draw_rect(0, dim.h - MARGIN_BOT, dim.w, MARGIN_BOT, tag_color);
 
 		s8 buffer_label;
-		buffer_label.data   = arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
+		buffer_label.data   = (char*)arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
 		buffer_label.length = (isize)strlen(buf_file_path);
 		memcpy(buffer_label.data, buf_file_path, (size_t)buffer_label.length);
 
@@ -166,7 +168,7 @@ gui_redraw(arena memory) {
 
 		line_info li = buffer_line_info(buf, cursor_pos);
 		s8 line_label;
-		line_label.data   = arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
+		line_label.data   = (char*)arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
 		line_label.length = sprintf(line_label.data, "%d,%d", li.line, li.col);
 
 		gui_set_bg_color(tag_color);
@@ -179,9 +181,10 @@ gui_redraw(arena memory) {
 
 	{ // Draw runes
 		static const color syntax_colors[syntax_end] = {
-			[syntax_comment] = rgb(128, 128, 128),
-			[syntax_string]  = rgb(244, 187, 68),
+			rgb(128, 128, 128), // syntax_comment
+			rgb(244, 187, 68),  // syntax_string
 		};
+
 		highlight_t *highlight = highlights.data;
 
 		for(isize i = display_pos; i < display_pos + display.length; ++i) {
@@ -379,7 +382,9 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			ctrl_x    = 0x18,
 			ctrl_y    = 0x19,
 			ctrl_z    = 0x1A,
-		} ch = event - kbd_char;
+		};
+
+		int ch = event - kbd_char;
 
 		if(ch == backspace) {
 			if(selection_valid) {
@@ -423,12 +428,12 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			log_t       *push = ch == ctrl_z ? &redo : &undo;
 			log_t       *pop  = ch == ctrl_z ? &undo : &redo;
 			log_entry_t *top = log_top(pop);
+			s8 erased = {};
 
 			if(top) {
 				switch(top->type) {
 					case entry_insert:
-						s8 erased = {0};
-						erased.data = malloc((size_t)top->length);
+						erased.data = (char*)malloc((size_t)top->length);
 						for(int i = 0; i < top->length; ++i) {
 							s8_append(&erased, buffer_get(buf, top->at + i));
 						}
@@ -504,8 +509,8 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			erase_selection();
 
 			if(ch == enter || ch == '\n') {
-				s8 indent = {0};
-				indent.data = arena_alloc(&memory, 1, 1, 80, 0);
+				s8 indent = {};
+				indent.data = (char*)arena_alloc(&memory, 1, 1, 80, 0);
 				s8_append(&indent, '\n');
 
 				isize bol = buffer_bol(buf, cursor_pos);
@@ -638,8 +643,8 @@ delete_runes(isize begin, isize end) {
 static void
 delete_runes2(isize begin, isize end, bool edit) {
 	if(edit) {
-		s8 erased = {0};
-		erased.data = malloc((size_t)(end - begin));
+		s8 erased = {};
+		erased.data = (char*)malloc((size_t)(end - begin));
 		for(isize i = begin; i < end; ++i) {
 			s8_append(&erased, buffer_get(buf, i));
 		}

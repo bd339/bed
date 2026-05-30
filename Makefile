@@ -1,6 +1,6 @@
 .POSIX:
 .SUFFIXES:
-CC = gcc
+CC = g++
 CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wdouble-promotion -Wconversion -fsanitize=undefined -fsanitize-trap -g3 -Itree-sitter/lib/include
 
 windows: main_win32.o buffer.o gui.o util.o syntax.o log.o tree-sitter.o tree-sitter-c.o
@@ -17,9 +17,9 @@ util.o: util.c util.h
 syntax.o: syntax.c syntax.h buffer.h util.h
 log.o: log.c log.h util.h
 tree-sitter.o: tree-sitter/lib/src/lib.c
-	$(CC) -Itree-sitter/lib/src -Itree-sitter/lib/include -O3 -o $@ -c $<
+	gcc -Itree-sitter/lib/src -Itree-sitter/lib/include -O3 -o $@ -c $<
 tree-sitter-c.o: tree-sitter-c/src/parser.c
-	$(CC) -Itree-sitter-c/src -O3 -o $@ -c $<
+	gcc -Itree-sitter-c/src -O3 -o $@ -c $<
 
 .SUFFIXES: .c .o
 .c.o:

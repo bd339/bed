@@ -13,7 +13,7 @@ buffer*
 buffer_new(arena *arena) {
 	for(int i = 0; i < countof(buffers); ++i) {
 		if(!buffers[i]) {
-			buffer *buf = arena_alloc(arena, sizeof(buffer), 1 << 16, 1, ALLOC_NOZERO);
+			buffer *buf = (buffer*)arena_alloc(arena, sizeof(buffer), 1 << 16, 1, ALLOC_NOZERO);
 			buf->length = 0;
 			return buffers[i] = buf;
 		}
@@ -89,7 +89,7 @@ buffer_get(buffer *buf, isize pos) {
 
 line_info
 buffer_line_info(buffer *buf, isize at) {
-	line_info li = {0};
+	line_info li = {};
 
 	for(isize i = 0; i < at; ++i) {
 		li.line += buf->runes[i] == '\n';

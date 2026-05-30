@@ -6,11 +6,13 @@
 typedef struct log_entry log_entry_t;
 typedef struct log       log_t;
 
+typedef enum {
+	entry_insert,
+	entry_erase,
+} log_type_t;
+
 struct log_entry {
-	enum {
-		entry_insert,
-		entry_erase,
-	} type;
+	log_type_t type;
 	isize at;
 	union {
 		isize length;

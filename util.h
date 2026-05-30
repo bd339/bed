@@ -30,7 +30,7 @@ __attribute__((alloc_size(2, 4), alloc_align(3)))
 void *arena_alloc(arena*, isize, isize, isize, int);
 void *arena_alignas(void*, isize);
 
-#define s8(s)           (s8){ lengthof(s), (s) }
+#define s8(s)           (s8){ lengthof(s), const_cast<char*>(s) }
 #define s8_append(s, x) (s)->data[(s)->length++] = (char)(x)
 
 #ifdef NDEBUG

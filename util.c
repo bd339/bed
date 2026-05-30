@@ -5,7 +5,7 @@
 
 void*
 arena_alloc(arena *arena, isize size, isize align, isize count, int flags) {
-	char *p = arena_alignas(arena->begin + arena->offset, align);
+	char *p = (char*)arena_alignas(arena->begin + arena->offset, align);
 
 	if(flags & ALLOC_RETNULL) {
 		if(count > (arena->end - p) / size) {

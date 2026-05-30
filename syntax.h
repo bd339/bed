@@ -9,13 +9,15 @@
 typedef struct syntax    syntax_t;
 typedef struct highlight highlight_t;
 
+typedef enum {
+	syntax_comment,
+	syntax_string,
+	syntax_keyword,
+	syntax_end,
+} syntax_event_t;
+
 struct highlight {
-	enum {
-		syntax_comment,
-		syntax_string,
-		syntax_keyword,
-		syntax_end,
-	} event;
+	syntax_event_t event;
 	isize begin;
 	isize end;
 };
