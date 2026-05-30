@@ -66,6 +66,7 @@ static void  display_scroll(int);
 #define MARGIN_R     5
 
 unsigned          *pixels;
+b32                hide_mouse_if_typing;
 static buffer     *buf;
 static const char *buf_file_path;
 static syntax_t   *syntax;
@@ -87,6 +88,7 @@ static void delete_rune(isize);
 static void delete_runes(isize, isize);
 static void delete_runes2(isize, isize, bool);
 static b32  buffer_is_dirty(buffer*);
+static void cursor_state_update(b32 typing, int mouse_x, int mouse_y);
 
 b32
 gui_file_open(arena *memory, const char *file_path) {
@@ -317,6 +319,12 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 		case mouse_left:
 			selection[0]  = set_cursor_pos(buffer_pos_at_xy(mouse_x, mouse_y));
 			selection[0] -= selection[0] == buffer_length(buf);
+			cursor_state_update(0, mouse_x, mouse_y);
+			break;
+
+		case mouse_right:
+		case mouse_middle:
+			cursor_state_update(0, mouse_x, mouse_y);
 			break;
 
 		case mouse_drag:
@@ -330,6 +338,10 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 			selection[1] -= selection[1] == buffer_length(buf);
 			set_cursor_pos(selection[1]);
 			selection_valid = 1;
+			break;
+
+		case mouse_move:
+			cursor_state_update(0, mouse_x, mouse_y);
 			break;
 
 		default:;
@@ -541,6 +553,9 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			} else {
 				insert_rune(cursor_pos, ch);
 			}
+
+			// Mouse position doesnt matter when typing
+			cursor_state_update(1, 0, 0);
 		}
 
 		gui_reflow();
@@ -557,6 +572,21 @@ gui_exit(void) {
 	}
 
 	return 1;
+}
+
+static void
+cursor_state_update(b32 typing, int mouse_x, int mouse_y) {
+	if(hide_mouse_if_typing && typing) {
+		gui_cursor_state_set(cursor_state_hidden);
+	} else {
+		dimensions dim = gui_dimensions();
+		if(mouse_x > MARGIN_L && mouse_x < dim.w - MARGIN_R &&
+		   mouse_y > MARGIN_TOP && mouse_y < dim.h - MARGIN_BOT) {
+			gui_cursor_state_set(cursor_state_beam);
+		} else {
+			gui_cursor_state_set(cursor_state_arrow);
+		}
+	}
 }
 
 static void

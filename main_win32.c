@@ -14,6 +14,8 @@ static HWND  window;
 static HDC   backbuffer;
 static HFONT font;
 static HFONT bold_font;
+static HCURSOR current_cursor;
+static HCURSOR cursors[3];
 
 LONG CALLBACK
 access_violation_handler(EXCEPTION_POINTERS *ExceptionInfo) {
@@ -36,29 +38,24 @@ LRESULT CALLBACK
 window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 	static int drag_x;
 	static int drag_y;
-	static b32 typing;
 	b32 shift = 0;
 	gui_event event;
+	WORD hit_test;
 
 	switch(message) {
 		case WM_CHAR:
-			BOOL hide_mouse;
-			SystemParametersInfo(SPI_GETMOUSEVANISH, 0, &hide_mouse, 0);
-
-			if(hide_mouse && !typing) {
-				ShowCursor(FALSE);
-				typing = 1;
-			}
-
 			shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 			event = (gui_event)(kbd_char + (wParam & 0xFF));
 			gui_keyboard(memory, event, shift);
 			break;
 
 		case WM_SETCURSOR:
-			if(typing) {
-				ShowCursor(TRUE);
-				typing = 0;
+			hit_test = LOWORD(lParam);
+			if(hit_test == HTCLIENT) {
+				SetCursor(current_cursor);
+				return 1;
+			} else {
+				return DefWindowProc(window, message, wParam, lParam);
 			}
 			break;
 
@@ -81,6 +78,20 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			gui_mouse(mouse_left, drag_x, drag_y);
 			break;
 
+		case WM_RBUTTONDOWN: {
+			int x = GET_X_LPARAM(lParam);
+			int y = GET_Y_LPARAM(lParam);
+			gui_mouse(mouse_right, x, y);
+			break;
+		}
+
+		case WM_MBUTTONDOWN: {
+			int x = GET_X_LPARAM(lParam);
+			int y = GET_Y_LPARAM(lParam);
+			gui_mouse(mouse_middle, x, y);
+			break;
+		}
+
 		case WM_MOUSEWHEEL: {
 			int delta = GET_WHEEL_DELTA_WPARAM(wParam);
 			int x = GET_X_LPARAM(lParam);
@@ -89,18 +100,23 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			break;
 		}
 
-		case WM_MOUSEMOVE:
+		case WM_MOUSEMOVE: {
+			int x = GET_X_LPARAM(lParam);
+			int y = GET_Y_LPARAM(lParam);
 			if(wParam & MK_LBUTTON) {
-				int x = GET_X_LPARAM(lParam);
-				int y = GET_Y_LPARAM(lParam);
 				int drag_w = GetSystemMetrics(SM_CXDRAG);
 				int drag_h = GetSystemMetrics(SM_CYDRAG);
 
 				if(x < drag_x - drag_w || x > drag_x + drag_w || y < drag_y - drag_h || y > drag_y + drag_h) {
 					gui_mouse(mouse_drag, x, y);
+				} else {
+					gui_mouse(mouse_move, x, y);
 				}
+			} else {
+				gui_mouse(mouse_move, x, y);
 			}
 			break;
+		}
 
 		case WM_PAINT: {
 			PAINTSTRUCT ps;
@@ -160,7 +176,14 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 		}
 
 		case WM_CREATE:
-			SetCursor(LoadCursor(0, IDC_ARROW));
+			cursors[0] = LoadCursor(NULL, IDC_ARROW);
+			cursors[1] = LoadCursor(NULL, IDC_IBEAM);
+			current_cursor = cursors[0];
+			SystemParametersInfo(SPI_GETMOUSEVANISH, 0, &hide_mouse_if_typing, 0);
+			break;
+
+		case WM_SETTINGCHANGE:
+			SystemParametersInfo(SPI_GETMOUSEVANISH, 0, &hide_mouse_if_typing, 0);
 			break;
 
 		case WM_CLOSE:
@@ -331,6 +354,16 @@ gui_set_bg_color(color rgb) {
 
 b32 gui_is_active(void) {
 	return window == GetActiveWindow();
+}
+
+void
+gui_cursor_state_set(cursor_state_t cursor_state)
+{
+	HCURSOR desired_cursor = cursors[cursor_state];
+	if(desired_cursor != current_cursor) {
+		current_cursor = desired_cursor;
+		SetCursor(current_cursor);
+	}
 }
 
 /* GUI IMPLEMENTATION END */

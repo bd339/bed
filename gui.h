@@ -21,11 +21,22 @@ typedef enum {
 	kbd_right,
 	kbd_down,
 	mouse_left,
+	mouse_right,
+	mouse_middle,
 	mouse_scrollup,
 	mouse_scrolldown,
 	mouse_drag,
+	mouse_move,
 	kbd_char, // NOTE: MUST BE LAST
 } gui_event;
+
+typedef enum {
+	cursor_state_arrow,
+	cursor_state_beam,
+	cursor_state_hidden,
+} cursor_state_t;
+
+extern b32 hide_mouse_if_typing;
 
 void       gui_clipboard_put(buffer*, isize, isize);
 s8         gui_clipboard_get(void);
@@ -43,5 +54,6 @@ void       gui_keyboard(arena, gui_event, int);
 b32        gui_exit(void);
 b32        gui_is_active(void);
 b32        gui_file_open(arena*, const char*);
+void       gui_cursor_state_set(cursor_state_t cursor_state);
 
 #endif // BED_GUI_H
