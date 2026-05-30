@@ -16,6 +16,8 @@ static HFONT font;
 static HFONT bold_font;
 static HCURSOR current_cursor;
 static HCURSOR cursors[3];
+static int drag_w;
+static int drag_h;
 
 LONG CALLBACK
 access_violation_handler(EXCEPTION_POINTERS *ExceptionInfo) {
@@ -32,6 +34,13 @@ access_violation_handler(EXCEPTION_POINTERS *ExceptionInfo) {
 	}
 
 	return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void
+system_settings_get(void) {
+	SystemParametersInfo(SPI_GETMOUSEVANISH, 0, &hide_mouse_if_typing, 0);
+	drag_w = GetSystemMetrics(SM_CXDRAG);
+	drag_h = GetSystemMetrics(SM_CYDRAG);
 }
 
 LRESULT CALLBACK
@@ -106,9 +115,6 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			int x = GET_X_LPARAM(lParam);
 			int y = GET_Y_LPARAM(lParam);
 			if(wParam & MK_LBUTTON) {
-				int drag_w = GetSystemMetrics(SM_CXDRAG);
-				int drag_h = GetSystemMetrics(SM_CYDRAG);
-
 				if(x < drag_x - drag_w || x > drag_x + drag_w || y < drag_y - drag_h || y > drag_y + drag_h) {
 					gui_mouse(mouse_drag, x, y);
 				} else {
@@ -181,12 +187,19 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			cursors[0] = LoadCursor(NULL, IDC_ARROW);
 			cursors[1] = LoadCursor(NULL, IDC_IBEAM);
 			current_cursor = cursors[0];
-			SystemParametersInfo(SPI_GETMOUSEVANISH, 0, &hide_mouse_if_typing, 0);
+			system_settings_get();
 			break;
 
 		case WM_SETTINGCHANGE:
-			SystemParametersInfo(SPI_GETMOUSEVANISH, 0, &hide_mouse_if_typing, 0);
+			system_settings_get();
 			break;
+
+		case WM_DPICHANGED: {
+			WORD dpi = LOWORD(wParam);
+			drag_w = GetSystemMetricsForDpi(SM_CXDRAG, dpi);
+			drag_h = GetSystemMetricsForDpi(SM_CYDRAG, dpi);
+			break;
+		}
 
 		case WM_CLOSE:
 			if(gui_exit()) {
