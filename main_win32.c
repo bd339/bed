@@ -234,6 +234,15 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 
 	AddVectoredExceptionHandler(1, &access_violation_handler);
 
+	if(lpCmdline[0] == '"') {
+		lpCmdline++;
+	}
+
+	size_t lpCmdlen = strlen(lpCmdline);
+	if(lpCmdlen > 0 && lpCmdline[lpCmdlen-1] == '"') {
+		lpCmdline[lpCmdlen-1] = '\0';
+	}
+
 	char file_path[MAX_PATH] = {0};
 	GetFullPathName(lpCmdline, MAX_PATH, file_path, 0);
 
