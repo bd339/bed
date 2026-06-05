@@ -49,8 +49,8 @@ static struct {
 	cell  *data;
 	isize  length;
 	isize  capacity;
-} display;                // Slice of x,y coords of every rune in the display
-static isize display_pos; // Buffer position of the first rune visible in the display
+	isize  buf_pos;
+} display; // Slice of x,y coords of every rune in the display
 
 static cell  xy_at_buffer_pos(isize);
 static isize buffer_pos_at_xy(int, int);
@@ -189,7 +189,7 @@ gui_redraw(arena memory) {
 
 		highlight_t *highlight = highlights.data;
 
-		for(isize i = display_pos; i < display_pos + display.length; ++i) {
+		for(isize i = display.buf_pos; i < display.buf_pos + display.length; ++i) {
 			if(highlight < highlights.data + highlights.length) {
 				if(highlight->end == i) {
 					gui_set_text_bold(false);
@@ -218,7 +218,7 @@ gui_redraw(arena memory) {
 			if(rune == -1 || rune == '\n') {
 				draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, magenta);
 
-				for(isize j = i-1; j >= display_pos; --j) {
+				for(isize j = i-1; j >= display.buf_pos; --j) {
 					rune = buffer_get(buf, j);
 
 					if(rune == '\t' || rune == ' ' || rune == '\r') {
@@ -240,7 +240,7 @@ gui_redraw(arena memory) {
 		}
 
 		if(cursor_state < 15 || (cursor_state >= 30 && cursor_state < 45)) {
-			if(display_pos <= cursor_pos && cursor_pos < display_pos + display.length) {
+			if(display.buf_pos <= cursor_pos && cursor_pos < display.buf_pos + display.length) {
 				cell cursor_xy = xy_at_buffer_pos(cursor_pos);
 				draw_cursor(cursor_xy.x, cursor_xy.y, cursor_xy.w);
 			}
@@ -261,7 +261,7 @@ gui_reflow(void) {
 
 	syntax_highlight_begin(syntax);
 
-	for(isize i = display_pos; y < display_bot; ++i) {
+	for(isize i = display.buf_pos; y < display_bot; ++i) {
 		int rune = buffer_get(buf, i);
 
 		if(rune == -1) {
@@ -351,11 +351,11 @@ gui_mouse(gui_event event, int mouse_x, int mouse_y) {
 void
 gui_keyboard(arena memory, gui_event event, int modifiers) {
 	{ // Make sure cursor is visible
-		if(cursor_pos < display_pos) {
-			display_pos = buffer_bol(buf, cursor_pos);
+		if(cursor_pos < display.buf_pos) {
+			display.buf_pos = buffer_bol(buf, cursor_pos);
 			gui_reflow();
 		} else {
-			while(display_pos + display.length <= cursor_pos) {
+			while(display.buf_pos + display.length <= cursor_pos) {
 				display_scroll(1); // TODO: this is very inefficient when the cursor is far away
 			}
 		}
@@ -738,8 +738,8 @@ erase_selection(void) {
 
 static cell
 xy_at_buffer_pos(isize pos) {
-	assert(display_pos <= pos && pos < display_pos + display.length);
-	return display.data[pos - display_pos];
+	assert(display.buf_pos <= pos && pos < display.buf_pos + display.length);
+	return display.data[pos - display.buf_pos];
 }
 
 static isize
@@ -759,20 +759,20 @@ buffer_pos_at_xy(int x, int y) {
 
 	for(isize i = lo; i < display.length; ++i) {
 		if(display.data[i].x > x || display.data[i].y > y) {
-			return i-1 + display_pos;
+			return i-1 + display.buf_pos;
 		}
 	}
 
-	return display_pos + display.length - 1;
+	return display.buf_pos + display.length - 1;
 }
 
 static void
 display_scroll(int num_lines) {
 	if(num_lines >= 0) {
-		display_pos = buffer_pos_at_xy(display.data[0].x, display.data[0].y + (num_lines + 1) * gui_font_height());
+		display.buf_pos = buffer_pos_at_xy(display.data[0].x, display.data[0].y + (num_lines + 1) * gui_font_height());
 	} else {
-		while(display_pos > 0 && num_lines) {
-			display_pos = buffer_bol(buf, display_pos - 1);
+		while(display.buf_pos > 0 && num_lines) {
+			display.buf_pos = buffer_bol(buf, display.buf_pos - 1);
 			num_lines++;
 		}
 	}
