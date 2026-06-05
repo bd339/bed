@@ -20,6 +20,8 @@ typedef enum {
 	kbd_up,
 	kbd_right,
 	kbd_down,
+	kbd_end,
+	kbd_home,
 	mouse_left,
 	mouse_right,
 	mouse_middle,

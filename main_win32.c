@@ -69,14 +69,22 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 			break;
 
 		case WM_KEYDOWN:
+			shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 			switch(wParam) {
 				case VK_LEFT:
 				case VK_UP:
 				case VK_RIGHT:
 				case VK_DOWN:
-					shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 					event = (gui_event)(kbd_left + (wParam - VK_LEFT));
 					gui_keyboard(memory, event, shift);
+					break;
+
+				case VK_END:
+					gui_keyboard(memory, kbd_end, shift);
+					break;
+
+				case VK_HOME:
+					gui_keyboard(memory, kbd_home, shift);
 					break;
 			}
 			break;
@@ -220,7 +228,7 @@ window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 
 int WINAPI
 WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdShow) {
-#if 1
+#if 0
 	AllocConsole();
 	freopen("CONOUT$", "w", stdout);
 #endif

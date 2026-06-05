@@ -381,6 +381,10 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 
 		set_cursor_pos(buffer_pos_at_xy(target_x, target_y));
 		cursor_x = target_x;
+	} else if(event == kbd_home) {
+		set_cursor_pos(buffer_bol(buf, cursor_pos));
+	} else if(event == kbd_end) {
+		set_cursor_pos(buffer_eol(buf, cursor_pos));
 	} else {
 		enum {
 			ctrl_c    = 0x03,
