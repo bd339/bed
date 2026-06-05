@@ -58,6 +58,10 @@ static void  display_scroll(int);
 
 /* DISPLAY API END */
 
+static b32 is_blank(int rune) {
+	return rune == '\n' || rune == ' ' || rune == '\t';
+}
+
 /* GUI IMPLEMENTATION BEGIN */
 
 #define MARGIN_TOP   0
@@ -482,17 +486,22 @@ gui_keyboard(arena memory, gui_event event, int modifiers) {
 			erase_selection();
 			insert_runes(cursor_pos, clipboard);
 		} else if(ch == ctrl_w) {
-			isize whitespace = cursor_pos;
+			isize start_of_word = cursor_pos - 1;
 
-			for(isize bol = buffer_bol(buf, cursor_pos); whitespace > bol; --whitespace) {
-				int rune = buffer_get(buf, whitespace);
+			while(start_of_word > 0) {
+				int r1 = buffer_get(buf, start_of_word);
+				int r2 = buffer_get(buf, start_of_word - 1);
 
-				if(rune == ' ' || rune == '\t') {
+				if(!is_blank(r1) && is_blank(r2)) {
 					break;
 				}
+
+				start_of_word--;
 			}
 
-			delete_runes(whitespace, cursor_pos);
+			if(start_of_word >= 0) {
+				delete_runes(start_of_word, cursor_pos);
+			}
 		} else if(ch == tab && selection_valid) {
 			b32 newline = 1;
 			isize begin = selection_begin();
