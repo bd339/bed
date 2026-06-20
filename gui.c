@@ -181,68 +181,70 @@ draw_buffer_tag_line(dimensions dim, arena *memory, color bg_color) {
 	gui_set_bg_color(bg_color);
 }
 
+static void
+draw_runes(dimensions dim, arena *memory, color bg_color) {
+	color magenta = rgb(255, 0, 255);
+	int line_height = gui_font_height();
+	static const color syntax_colors[syntax_end] = {
+		rgb(128, 128, 128), // syntax_comment
+		rgb(244, 187, 68),  // syntax_string
+	};
+
+	highlight_t *highlight = highlights.data;
+
+	for(isize i = display.buf_pos; i < display.buf_pos + display.length; ++i) {
+		if(highlight < highlights.data + highlights.length) {
+			if(highlight->end == i) {
+				gui_set_text_bold(false);
+				gui_set_text_color(0);
+				highlight++;
+			}
+
+			if(highlight->begin == i) {
+				if(highlight->event == syntax_keyword) {
+					gui_set_text_bold(true);
+				} else {
+					gui_set_text_color(syntax_colors[highlight->event]);
+				}
+			}
+		}
+
+		if(selection_valid) {
+			gui_set_bg_color(selection_begin() <= i && i <= selection_end() ? rgb(208, 235, 255) : bg_color);
+		}
+
+		int rune = buffer_get(buf, i);
+		cell xy  = xy_at_buffer_pos(i);
+
+		draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, rgb(0, 255, 0));
+
+		if(rune == -1 || rune == '\n') {
+			draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, magenta);
+
+			for(isize j = i-1; j >= display.buf_pos; --j) {
+				rune = buffer_get(buf, j);
+
+				if(rune == '\t' || rune == ' ' || rune == '\r') {
+					xy = xy_at_buffer_pos(j);
+					draw_rect(xy.x, xy.y, xy.w, line_height, rgb(255, 0, 0));
+				} else {
+					break;
+				}
+			}
+		} else {
+			gui_text(xy.x, xy.y, rune == '\t' ? s8("    ") : (s8) { 1, (char*)&rune });
+		}
+	}
+}
+
 void
 gui_redraw(arena memory) {
-	dimensions dim         = gui_dimensions();
-	color      magenta     = rgb(255, 0, 255);
-	color      bg_color    = rgb(255, 255, 234);
-	int        line_height = gui_font_height();
+	dimensions dim = gui_dimensions();
+	color bg_color = rgb(255, 255, 234);
 
 	draw_background(dim, bg_color);
 	draw_buffer_tag_line(dim, &memory, bg_color);
-
-	{ // Draw runes
-		static const color syntax_colors[syntax_end] = {
-			rgb(128, 128, 128), // syntax_comment
-			rgb(244, 187, 68),  // syntax_string
-		};
-
-		highlight_t *highlight = highlights.data;
-
-		for(isize i = display.buf_pos; i < display.buf_pos + display.length; ++i) {
-			if(highlight < highlights.data + highlights.length) {
-				if(highlight->end == i) {
-					gui_set_text_bold(false);
-					gui_set_text_color(0);
-					highlight++;
-				}
-
-				if(highlight->begin == i) {
-					if(highlight->event == syntax_keyword) {
-						gui_set_text_bold(true);
-					} else {
-						gui_set_text_color(syntax_colors[highlight->event]);
-					}
-				}
-			}
-
-			if(selection_valid) {
-				gui_set_bg_color(selection_begin() <= i && i <= selection_end() ? rgb(208, 235, 255) : bg_color);
-			}
-
-			int rune = buffer_get(buf, i);
-			cell xy  = xy_at_buffer_pos(i);
-
-			draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, rgb(0, 255, 0));
-
-			if(rune == -1 || rune == '\n') {
-				draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, magenta);
-
-				for(isize j = i-1; j >= display.buf_pos; --j) {
-					rune = buffer_get(buf, j);
-
-					if(rune == '\t' || rune == ' ' || rune == '\r') {
-						xy = xy_at_buffer_pos(j);
-						draw_rect(xy.x, xy.y, xy.w, line_height, rgb(255, 0, 0));
-					} else {
-						break;
-					}
-				}
-			} else {
-				gui_text(xy.x, xy.y, rune == '\t' ? s8("    ") : (s8) { 1, (char*)&rune });
-			}
-		}
-	}
+	draw_runes(dim, &memory, bg_color);
 
 	{ // Draw cursor
 		if(gui_is_active()) {
