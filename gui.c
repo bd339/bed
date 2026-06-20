@@ -140,6 +140,16 @@ FAIL:
 	return 0;
 }
 
+static void
+draw_background(dimensions dim, color bg_color) {
+	color magenta = rgb(255, 0, 255);
+	draw_rect(0, 0, dim.w, dim.h, bg_color);
+	draw_rect(0, 0, dim.w, MARGIN_TOP, magenta);
+	draw_rect(0, 0, MARGIN_L, dim.h, magenta);
+	draw_rect(dim.w - MARGIN_R, 0, MARGIN_R, dim.h, magenta);
+	gui_set_bg_color(bg_color);
+}
+
 void
 gui_redraw(arena memory) {
 	dimensions dim         = gui_dimensions();
@@ -147,13 +157,7 @@ gui_redraw(arena memory) {
 	color      bg_color    = rgb(255, 255, 234);
 	int        line_height = gui_font_height();
 
-	{ // Draw background
-		draw_rect(0, 0, dim.w, dim.h, bg_color);
-		draw_rect(0, 0, dim.w, MARGIN_TOP, magenta);
-		draw_rect(0, 0, MARGIN_L, dim.h, magenta);
-		draw_rect(dim.w - MARGIN_R, 0, MARGIN_R, dim.h, magenta);
-		gui_set_bg_color(bg_color);
-	}
+	draw_background(dim, bg_color);
 
 	{ // Draw buffer tag line
 		color tag_color = warn_unsaved_changes ? rgb(255, 0, 0) : rgb(231, 255, 221);
