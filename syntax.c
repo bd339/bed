@@ -57,7 +57,7 @@ syntax_new() {
 
 	static const char *c99_keywords[] = {
 	    "break", "case", "continue", "default", "do",
-	    "else", "enum", "for", "goto", "if", "return",
+	    "else", "for", "goto", "if", "return",
 	    "switch", "while",
 	};
 	syn->keyword_symbols = (bool*)calloc(ts_language_symbol_count(language), sizeof(bool));
