@@ -237,6 +237,20 @@ draw_runes(dimensions dim, arena *memory, color bg_color) {
 	}
 }
 
+static void
+draw_cursor(void) {
+	if(gui_is_active()) {
+		cursor_state = (cursor_state + 1) % 60;
+	}
+
+	if(cursor_state < 15 || (cursor_state >= 30 && cursor_state < 45)) {
+		if(display.buf_pos <= cursor_pos && cursor_pos < display.buf_pos + display.length) {
+			cell cursor_xy = xy_at_buffer_pos(cursor_pos);
+			draw_cursor(cursor_xy.x, cursor_xy.y, cursor_xy.w);
+		}
+	}
+}
+
 void
 gui_redraw(arena memory) {
 	dimensions dim = gui_dimensions();
@@ -245,19 +259,7 @@ gui_redraw(arena memory) {
 	draw_background(dim, bg_color);
 	draw_buffer_tag_line(dim, &memory, bg_color);
 	draw_runes(dim, &memory, bg_color);
-
-	{ // Draw cursor
-		if(gui_is_active()) {
-			cursor_state = (cursor_state + 1) % 60;
-		}
-
-		if(cursor_state < 15 || (cursor_state >= 30 && cursor_state < 45)) {
-			if(display.buf_pos <= cursor_pos && cursor_pos < display.buf_pos + display.length) {
-				cell cursor_xy = xy_at_buffer_pos(cursor_pos);
-				draw_cursor(cursor_xy.x, cursor_xy.y, cursor_xy.w);
-			}
-		}
-	}
+	draw_cursor();
 }
 
 /* Must be called whenever buffer contents change or the dimensions change. */
