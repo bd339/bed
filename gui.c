@@ -150,6 +150,37 @@ draw_background(dimensions dim, color bg_color) {
 	gui_set_bg_color(bg_color);
 }
 
+static void
+draw_buffer_tag_line(dimensions dim, arena *memory, color bg_color) {
+	color tag_color = warn_unsaved_changes ? rgb(255, 0, 0) : rgb(231, 255, 221);
+	draw_rect(0, dim.h - MARGIN_BOT, dim.w, MARGIN_BOT, tag_color);
+
+	s8 buffer_label;
+	buffer_label.data   = (char*)arena_alloc(memory, 1, 1, 512, ALLOC_NOZERO);
+	buffer_label.length = (isize)strlen(buf_file_path);
+	memcpy(buffer_label.data, buf_file_path, (size_t)buffer_label.length);
+
+	if(warn_unsaved_changes) {
+		const char warning[] = " has unsaved changes.";
+		memcpy(buffer_label.data + buffer_label.length, warning, lengthof(warning));
+		buffer_label.length += lengthof(warning);
+	} else if(buffer_is_dirty(buf)) {
+		s8_append(&buffer_label, '*');
+	}
+
+	line_info li = buffer_line_info(buf, cursor_pos);
+	s8 line_label;
+	line_label.data   = (char*)arena_alloc(memory, 1, 1, 512, ALLOC_NOZERO);
+	line_label.length = sprintf(line_label.data, "%d,%d", li.line, li.col);
+
+	gui_set_bg_color(tag_color);
+	gui_set_text_color(warn_unsaved_changes ? rgb(255, 255, 255) : rgb(0, 0, 0));
+	gui_text(MARGIN_L, dim.h - gui_font_height(), buffer_label);
+	gui_text(dim.w - MARGIN_R - 75, dim.h - gui_font_height(), line_label);
+	gui_set_text_color(rgb(0, 0, 0));
+	gui_set_bg_color(bg_color);
+}
+
 void
 gui_redraw(arena memory) {
 	dimensions dim         = gui_dimensions();
@@ -158,36 +189,7 @@ gui_redraw(arena memory) {
 	int        line_height = gui_font_height();
 
 	draw_background(dim, bg_color);
-
-	{ // Draw buffer tag line
-		color tag_color = warn_unsaved_changes ? rgb(255, 0, 0) : rgb(231, 255, 221);
-		draw_rect(0, dim.h - MARGIN_BOT, dim.w, MARGIN_BOT, tag_color);
-
-		s8 buffer_label;
-		buffer_label.data   = (char*)arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
-		buffer_label.length = (isize)strlen(buf_file_path);
-		memcpy(buffer_label.data, buf_file_path, (size_t)buffer_label.length);
-
-		if(warn_unsaved_changes) {
-			const char warning[] = " has unsaved changes.";
-			memcpy(buffer_label.data + buffer_label.length, warning, lengthof(warning));
-			buffer_label.length += lengthof(warning);
-		} else if(buffer_is_dirty(buf)) {
-			s8_append(&buffer_label, '*');
-		}
-
-		line_info li = buffer_line_info(buf, cursor_pos);
-		s8 line_label;
-		line_label.data   = (char*)arena_alloc(&memory, 1, 1, 512, ALLOC_NOZERO);
-		line_label.length = sprintf(line_label.data, "%d,%d", li.line, li.col);
-
-		gui_set_bg_color(tag_color);
-		gui_set_text_color(warn_unsaved_changes ? rgb(255, 255, 255) : rgb(0, 0, 0));
-		gui_text(MARGIN_L, dim.h - gui_font_height(), buffer_label);
-		gui_text(dim.w - MARGIN_R - 75, dim.h - gui_font_height(), line_label);
-		gui_set_text_color(rgb(0, 0, 0));
-		gui_set_bg_color(bg_color);
-	}
+	draw_buffer_tag_line(dim, &memory, bg_color);
 
 	{ // Draw runes
 		static const color syntax_colors[syntax_end] = {
