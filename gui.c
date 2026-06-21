@@ -285,6 +285,8 @@ draw_runes(dimensions dim, arena *memory, color bg_color) {
 	}
 
 	flush_line(line_buf, line_buf_cnt, line_first_cell.x, line_first_cell.y);
+	gui_set_text_color(0);
+	gui_set_text_bold(false);
 }
 
 static void
