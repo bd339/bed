@@ -358,8 +358,12 @@ gui_font_width(int rune, b32 bold) {
 
 int
 gui_font_height(void) {
-	TEXTMETRIC metric;
-	GetTextMetrics(backbuffer, &metric);
+	static TEXTMETRIC metric;
+	static b32 cached;
+	if(!cached) {
+		GetTextMetrics(backbuffer, &metric);
+		cached = 1;
+	}
 	return metric.tmHeight;
 }
 
