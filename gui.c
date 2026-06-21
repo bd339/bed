@@ -280,6 +280,7 @@ gui_reflow(void) {
 	int x = MARGIN_L;
 	int y = MARGIN_TOP;
 	int display_bot = dim.h - MARGIN_BOT - gui_font_height();
+	b32 bold = 0;
 
 	syntax_highlight_begin(syntax);
 
@@ -292,7 +293,7 @@ gui_reflow(void) {
 		}
 
 		if(highlights.length && highlights.data[highlights.length - 1].end == i) {
-			gui_set_text_bold(false);
+			bold = 0;
 		}
 
 		if(!highlights.length || highlights.data[highlights.length - 1].end <= i) {
@@ -300,14 +301,14 @@ gui_reflow(void) {
 
 			if(syntax_highlight_next(syntax, buf, i, &highlight)) {
 				if(highlight.event == syntax_keyword) {
-					gui_set_text_bold(true);
+					bold = 1;
 				}
 
 				*push(&highlights) = highlight;
 			}
 		}
 
-		int width = rune == '\t' ? 4 * gui_font_width(' ') : gui_font_width(rune);
+		int width = rune == '\t' ? 4 * gui_font_width(' ', bold) : gui_font_width(rune, bold);
 
 		if(rune == '\n') {
 			*push(&display) = (cell){ x, y, width };

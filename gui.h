@@ -42,7 +42,7 @@ extern b32 hide_mouse_if_typing;
 
 void       gui_clipboard_put(buffer*, isize, isize);
 s8         gui_clipboard_get(void);
-int        gui_font_width(int);
+int        gui_font_width(int, b32);
 int        gui_font_height(void);
 dimensions gui_dimensions(void);
 void       gui_text(int, int, s8);

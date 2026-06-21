@@ -18,6 +18,8 @@ static HCURSOR current_cursor;
 static HCURSOR cursors[3];
 static int drag_w;
 static int drag_h;
+static int font_widths_regular[256];
+static int font_widths_bold[256];
 
 LONG CALLBACK
 access_violation_handler(EXCEPTION_POINTERS *ExceptionInfo) {
@@ -287,10 +289,16 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdline, int nCmdS
 	}
 
 	font = (HFONT)GetStockObject(SYSTEM_FIXED_FONT);
+	HDC hdc = GetDC(window);
+	HFONT old_font = (HFONT)SelectObject(hdc, font);
+	GetCharWidth32(hdc, 0, 255, font_widths_regular);
 	LOGFONT lf;
 	GetObject(font, sizeof(LOGFONT), &lf);
 	lf.lfWeight = FW_BOLD;
 	bold_font = CreateFontIndirect(&lf);
+	SelectObject(hdc, bold_font);
+	GetCharWidth32(hdc, 0, 255, font_widths_bold);
+	SelectObject(hdc, old_font);
 
 	ShowWindow(window, SW_MAXIMIZE);
 	SetTimer(window, 1, 1000 / 60, 0);
@@ -338,9 +346,13 @@ gui_clipboard_get(void) {
 }
 
 int
-gui_font_width(int rune) {
+gui_font_width(int rune, b32 bold) {
 	int width;
-	GetCharWidth32(backbuffer, (unsigned)rune, (unsigned)rune, &width);
+	if(bold) {
+		width = font_widths_bold[rune];
+	} else {
+		width = font_widths_regular[rune];
+	}
 	return width;
 }
 
