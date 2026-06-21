@@ -192,7 +192,6 @@ get_us() {
 
 static void
 draw_runes(dimensions dim, arena *memory, color bg_color) {
-	color magenta = rgb(255, 0, 255);
 	int line_height = gui_font_height();
 	static const color syntax_colors[syntax_end] = {
 		rgb(128, 128, 128), // syntax_comment
@@ -225,10 +224,8 @@ draw_runes(dimensions dim, arena *memory, color bg_color) {
 		int rune = buffer_get(buf, i);
 		cell xy  = xy_at_buffer_pos(i);
 
-		draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, rgb(0, 255, 0));
 
 		if(rune == -1 || rune == '\n') {
-			draw_rect(dim.w - MARGIN_R, xy.y, MARGIN_R, line_height, magenta);
 
 			for(isize j = i-1; j >= display.buf_pos; --j) {
 				rune = buffer_get(buf, j);
