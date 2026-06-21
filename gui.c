@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 
 /* CURSOR API BEGIN */
 
@@ -181,6 +182,14 @@ draw_buffer_tag_line(dimensions dim, arena *memory, color bg_color) {
 	gui_set_bg_color(bg_color);
 }
 
+static double
+get_us() {
+    LARGE_INTEGER freq, count;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&count);
+    return (double)count.QuadPart * 1000000.0 / (double)freq.QuadPart;
+}
+
 static void
 draw_runes(dimensions dim, arena *memory, color bg_color) {
 	color magenta = rgb(255, 0, 255);
@@ -251,6 +260,8 @@ draw_cursor(void) {
 	}
 }
 
+static char perf_buf[32];
+
 void
 gui_redraw(arena memory) {
 	dimensions dim = gui_dimensions();
@@ -260,6 +271,7 @@ gui_redraw(arena memory) {
 	draw_buffer_tag_line(dim, &memory, bg_color);
 	draw_runes(dim, &memory, bg_color);
 	draw_cursor();
+	gui_text(dim.w - 80 - MARGIN_R, MARGIN_TOP, (s8){(isize)strlen(perf_buf), perf_buf});
 }
 
 /* Must be called whenever buffer contents change or the dimensions change. */
@@ -267,7 +279,7 @@ void
 gui_reflow(void) {
 	highlights.length = 0;
 	display.length = 0;
-
+	double start_us = get_us();
 	dimensions dim = gui_dimensions();
 	int x = MARGIN_L;
 	int y = MARGIN_TOP;
@@ -317,6 +329,8 @@ gui_reflow(void) {
 	}
 
 	syntax_highlight_end(syntax);
+	double stop_us = get_us();
+	snprintf(perf_buf, sizeof(perf_buf), "%g us", stop_us - start_us);
 }
 
 void
