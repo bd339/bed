@@ -190,6 +190,14 @@ get_us() {
 }
 
 static void
+flush_line(char *line, int line_len, int x, int y) {
+  if(line_len > 0) {
+    s8 text = (s8){ line_len, line };
+    gui_text(x, y, text);
+  }
+}
+
+static void
 draw_runes(dimensions dim, arena *memory, color bg_color) {
 	int line_height = gui_font_height();
 	static const color syntax_colors[syntax_end] = {
@@ -199,15 +207,23 @@ draw_runes(dimensions dim, arena *memory, color bg_color) {
 
 	highlight_t *highlight = highlights.data;
 
+	char line_buf[8192];
+	int line_buf_cnt = 0;
+	cell line_first_cell;
+
 	for(isize i = display.buf_pos; i < display.buf_pos + display.length; ++i) {
 		if(highlight < highlights.data + highlights.length) {
 			if(highlight->end == i) {
+				flush_line(line_buf, line_buf_cnt, line_first_cell.x, line_first_cell.y);
+				line_buf_cnt = 0;
 				gui_set_text_bold(false);
 				gui_set_text_color(0);
 				highlight++;
 			}
 
 			if(highlight->begin == i) {
+				flush_line(line_buf, line_buf_cnt, line_first_cell.x, line_first_cell.y);
+				line_buf_cnt = 0;
 				if(highlight->event == syntax_keyword) {
 					gui_set_text_bold(true);
 				} else {
@@ -217,14 +233,28 @@ draw_runes(dimensions dim, arena *memory, color bg_color) {
 		}
 
 		if(selection_valid) {
-			gui_set_bg_color(selection_begin() <= i && i <= selection_end() ? rgb(208, 235, 255) : bg_color);
+			if(i == selection_begin()) {
+				flush_line(line_buf, line_buf_cnt, line_first_cell.x, line_first_cell.y);
+				line_buf_cnt = 0;
+				gui_set_bg_color(rgb(208, 235, 255));
+			}
 		}
 
 		int rune = buffer_get(buf, i);
 		cell xy  = xy_at_buffer_pos(i);
 
+		if(line_buf_cnt > 0 && line_first_cell.y != xy.y) {
+			flush_line(line_buf, line_buf_cnt, line_first_cell.x, line_first_cell.y);
+			line_buf_cnt = 0;
+		}
+
+		if(line_buf_cnt == 0) {
+			line_first_cell = xy;
+		}
 
 		if(rune == -1 || rune == '\n') {
+			flush_line(line_buf, line_buf_cnt, line_first_cell.x, line_first_cell.y);
+			line_buf_cnt = 0;
 
 			for(isize j = i-1; j >= display.buf_pos; --j) {
 				rune = buffer_get(buf, j);
@@ -236,10 +266,25 @@ draw_runes(dimensions dim, arena *memory, color bg_color) {
 					break;
 				}
 			}
+		} else if(rune == '\t') {
+			line_buf[line_buf_cnt++] = ' ';
+			line_buf[line_buf_cnt++] = ' ';
+			line_buf[line_buf_cnt++] = ' ';
+			line_buf[line_buf_cnt++] = ' ';
 		} else {
-			gui_text(xy.x, xy.y, rune == '\t' ? s8("    ") : (s8) { 1, (char*)&rune });
+			line_buf[line_buf_cnt++] = (char)rune;
+		}
+
+		if(selection_valid) {
+			if(i == selection_end()) {
+				flush_line(line_buf, line_buf_cnt, line_first_cell.x, line_first_cell.y);
+				line_buf_cnt = 0;
+				gui_set_bg_color(bg_color);
+			}
 		}
 	}
+
+	flush_line(line_buf, line_buf_cnt, line_first_cell.x, line_first_cell.y);
 }
 
 static void
