@@ -84,7 +84,6 @@ static struct {
 	isize        capacity;
 } highlights;
 
-static void draw_rect(int, int, int, int, color);
 static void draw_cursor(int, int, int);
 static void insert_rune(isize, int);
 static void insert_runes(isize, s8);
@@ -144,17 +143,17 @@ FAIL:
 static void
 draw_background(dimensions dim, color bg_color) {
 	color magenta = rgb(255, 0, 255);
-	draw_rect(0, 0, dim.w, dim.h, bg_color);
-	draw_rect(0, 0, dim.w, MARGIN_TOP, magenta);
-	draw_rect(0, 0, MARGIN_L, dim.h, magenta);
-	draw_rect(dim.w - MARGIN_R, 0, MARGIN_R, dim.h, magenta);
+	gui_fill_rect(0, 0, dim.w, dim.h, bg_color);
+	gui_fill_rect(0, 0, dim.w, MARGIN_TOP, magenta);
+	gui_fill_rect(0, 0, MARGIN_L, dim.h, magenta);
+	gui_fill_rect(dim.w - MARGIN_R, 0, MARGIN_R, dim.h, magenta);
 	gui_set_bg_color(bg_color);
 }
 
 static void
 draw_buffer_tag_line(dimensions dim, arena *memory, color bg_color) {
 	color tag_color = warn_unsaved_changes ? rgb(255, 0, 0) : rgb(231, 255, 221);
-	draw_rect(0, dim.h - MARGIN_BOT, dim.w, MARGIN_BOT, tag_color);
+	gui_fill_rect(0, dim.h - MARGIN_BOT, dim.w, MARGIN_BOT, tag_color);
 
 	s8 buffer_label;
 	buffer_label.data   = (char*)arena_alloc(memory, 1, 1, 512, ALLOC_NOZERO);
@@ -232,7 +231,7 @@ draw_runes(dimensions dim, arena *memory, color bg_color) {
 
 				if(rune == '\t' || rune == ' ' || rune == '\r') {
 					xy = xy_at_buffer_pos(j);
-					draw_rect(xy.x, xy.y, xy.w, line_height, rgb(255, 0, 0));
+					gui_fill_rect(xy.x, xy.y, xy.w, line_height, rgb(255, 0, 0));
 				} else {
 					break;
 				}
@@ -634,23 +633,6 @@ clip_rect(int *x, int *y, int *w, int *h) {
 	*y = ymin;
 	*w = xmax - xmin;
 	*h = ymax - ymin;
-}
-
-static void
-draw_rect(int x, int y, int w, int h, color rgb) {
-	clip_rect(&x, &y, &w, &h);
-	dimensions dim = gui_dimensions();
-	unsigned *row = pixels + y * dim.w + x;
-
-	for(int i = 0; i < h; ++i) {
-		unsigned *pixel = row;
-
-		for(int j = 0; j < w; ++j) {
-			*pixel++ = rgb;
-		}
-
-		row += dim.w;
-	}
 }
 
 static void

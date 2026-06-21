@@ -57,5 +57,6 @@ b32        gui_exit(void);
 b32        gui_is_active(void);
 b32        gui_file_open(arena*, const char*);
 void       gui_cursor_state_set(cursor_state_t cursor_state);
+void       gui_fill_rect(int, int, int, int, color);
 
 #endif // BED_GUI_H

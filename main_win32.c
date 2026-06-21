@@ -398,4 +398,40 @@ gui_cursor_state_set(cursor_state_t cursor_state)
 	}
 }
 
+void
+gui_fill_rect(int x, int y, int w, int h, color rgb) {
+	static HBRUSH brush_cache[10];
+	static color  color_cache[10];
+	static int    cache_size;
+	HBRUSH brush = NULL;
+
+	for(int i = 0; i < cache_size; i++) {
+		if(color_cache[i] == rgb) {
+			brush = brush_cache[i];
+		}
+	}
+
+	if(brush == NULL) {
+		if(cache_size == 10) {
+			for(int i = 0; i < cache_size; i++) {
+				DeleteObject(brush_cache[i]);
+			}
+			cache_size = 0;
+			gui_fill_rect(x, y, w, h, rgb);
+			return;
+		}
+		DWORD r = rgb >> 16 & 0xFF;
+		DWORD g = rgb >>  8 & 0xFF;
+		DWORD b = rgb >>  0 & 0xFF;
+		brush = CreateSolidBrush(RGB(r, g, b));
+		brush_cache[cache_size] = brush;
+		color_cache[cache_size] = rgb;
+		cache_size++;
+	}
+
+	HBRUSH old_brush = (HBRUSH)SelectObject(backbuffer, brush);
+	PatBlt(backbuffer, x, y, w, h, PATCOPY);
+	SelectObject(backbuffer, old_brush);
+}
+
 /* GUI IMPLEMENTATION END */
